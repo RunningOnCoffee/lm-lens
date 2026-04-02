@@ -12,7 +12,7 @@ from sqlalchemy import func, select
 from app.engine.collector import MetricCollector
 from app.engine.conversation import ConversationSimulator, SessionConfig
 from app.engine.llm_client import LLMClient
-from app.engine.snapshots import SnapshotGenerator, ws_manager
+from app.engine.snapshots import SnapshotGenerator, percentile, ws_manager
 from app.models.benchmark import Benchmark, BenchmarkRequest, BenchmarkSnapshot
 
 logger = logging.getLogger(__name__)
@@ -43,12 +43,14 @@ class BenchmarkRunner:
         self._collector: MetricCollector | None = None
         self._snapshot_gen: SnapshotGenerator | None = None
         self._semaphore: asyncio.Semaphore | None = None
+        self._active_user_count: int = 0
 
     async def run(self) -> None:
         _active_runners[self._benchmark_id] = self
         try:
             await self._update_status("running")
             self._setup()
+            self._snapshot_gen.started_at = datetime.now(timezone.utc)
             await self._collector.start_flush_loop()
             await self._snapshot_gen.start()
             await self._execute_load_pattern()
@@ -72,11 +74,33 @@ class BenchmarkRunner:
             stream=True,
         )
         self._collector = MetricCollector(self._benchmark_id, self._session_factory)
+
+        # Build profile ID → name mapping for readable per-profile keys
+        profile_names: dict[str, str] = {}
+        for sp in self._scenario.get("profiles", []):
+            profile = sp.get("profile", {})
+            pid = str(profile.get("id", ""))
+            name = profile.get("name", pid[:8] if pid else "unknown")
+            profile_names[pid] = name
+
         self._snapshot_gen = SnapshotGenerator(
-            self._benchmark_id, self._collector, self._session_factory
+            self._benchmark_id, self._collector, self._session_factory,
+            profile_names=profile_names,
         )
         max_conc = self._scenario.get("max_concurrency", 100)
         self._semaphore = asyncio.Semaphore(max_conc)
+
+        # Pass timing info to snapshot generator for broadcast
+        load_config = self._scenario.get("load_config", {})
+        self._snapshot_gen.duration_seconds = float(load_config.get("duration_seconds", 60))
+
+    def _increment_active_users(self) -> None:
+        self._active_user_count += 1
+        self._snapshot_gen.active_users = self._active_user_count
+
+    def _decrement_active_users(self) -> None:
+        self._active_user_count -= 1
+        self._snapshot_gen.active_users = self._active_user_count
 
     async def _execute_load_pattern(self) -> None:
         load_config = self._scenario.get("load_config", {})
@@ -90,17 +114,16 @@ class BenchmarkRunner:
             await self._run_breaking_point(load_config)
 
     async def _run_stress(self, config: dict) -> None:
-        """All users start simultaneously, run for duration_seconds."""
+        """All users start simultaneously, loop sessions for duration_seconds."""
         duration = config.get("duration_seconds", 60)
         sessions = self._build_all_sessions()
-        self._snapshot_gen.active_users = len(sessions)
 
         tasks = [
-            asyncio.create_task(self._run_user(sc, duration))
+            asyncio.create_task(self._run_user(sc))
             for sc in sessions
         ]
 
-        # Wait for duration or abort
+        # Wait for duration or user abort
         try:
             await asyncio.wait_for(self._abort_event.wait(), timeout=duration)
         except asyncio.TimeoutError:
@@ -110,37 +133,31 @@ class BenchmarkRunner:
         await asyncio.gather(*tasks, return_exceptions=True)
 
     async def _run_ramp(self, config: dict) -> None:
-        """Add users in steps over time."""
+        """Add users in steps over time. Each user loops sessions until duration ends."""
         duration = config.get("duration_seconds", 60)
         step_size = config.get("ramp_users_per_step", 1)
         interval = config.get("ramp_interval_seconds", 10)
         sessions = self._build_all_sessions()
         tasks: list[asyncio.Task] = []
         idx = 0
-        start = asyncio.get_event_loop().time()
 
         while idx < len(sessions) and not self._abort_event.is_set():
-            elapsed = asyncio.get_event_loop().time() - start
-            remaining = duration - elapsed
-            if remaining <= 0:
-                break
-
             batch = sessions[idx:idx + step_size]
             for sc in batch:
-                tasks.append(asyncio.create_task(self._run_user(sc, remaining)))
+                tasks.append(asyncio.create_task(self._run_user(sc)))
             idx += step_size
-            self._snapshot_gen.active_users = min(idx, len(sessions))
 
             # Wait for interval or abort
             try:
-                await asyncio.wait_for(self._abort_event.wait(), timeout=min(interval, remaining))
-                break
+                await asyncio.wait_for(self._abort_event.wait(), timeout=interval)
+                break  # Abort was requested
             except asyncio.TimeoutError:
                 pass
 
-        # Wait for remaining duration
-        elapsed = asyncio.get_event_loop().time() - start
-        remaining = max(0, duration - elapsed)
+        # All users launched (or aborted). Wait for remaining duration.
+        # Each user loops until abort_event is set, so we just wait for duration.
+        elapsed_launching = idx / max(step_size, 1) * interval
+        remaining = max(0, duration - elapsed_launching)
         if remaining > 0 and not self._abort_event.is_set():
             try:
                 await asyncio.wait_for(self._abort_event.wait(), timeout=remaining)
@@ -169,18 +186,16 @@ class BenchmarkRunner:
 
         while idx < len(sessions) and not self._abort_event.is_set():
             elapsed = asyncio.get_event_loop().time() - start
-            remaining = duration - elapsed
-            if remaining <= 0:
+            if elapsed >= duration:
                 break
 
             batch = sessions[idx:idx + step_size]
             for sc in batch:
-                tasks.append(asyncio.create_task(self._run_user(sc, remaining)))
+                tasks.append(asyncio.create_task(self._run_user(sc)))
             idx += step_size
-            self._snapshot_gen.active_users = min(idx, len(sessions))
 
             try:
-                await asyncio.wait_for(self._abort_event.wait(), timeout=min(interval, remaining))
+                await asyncio.wait_for(self._abort_event.wait(), timeout=interval)
                 break
             except asyncio.TimeoutError:
                 pass
@@ -236,31 +251,25 @@ class BenchmarkRunner:
             logger.exception("Error checking breaking criteria")
             return False
 
-    async def _run_user(self, session_config: SessionConfig, max_duration: float) -> None:
-        """Run a single virtual user for up to max_duration seconds."""
-        start = asyncio.get_event_loop().time()
-        min_s, max_s = session_config.sessions_per_user
-        num_sessions = random.randint(min_s, max_s)
-
-        for _ in range(num_sessions):
-            if self._abort_event.is_set():
-                return
-            elapsed = asyncio.get_event_loop().time() - start
-            if elapsed >= max_duration:
-                return
-
-            async with self._semaphore:
-                self._snapshot_gen.requests_in_flight += 1
-                try:
-                    sim = ConversationSimulator(
-                        config=session_config,
-                        llm_client=self._llm_client,
-                        collector=self._collector,
-                        abort_event=self._abort_event,
-                    )
-                    await sim.run()
-                finally:
-                    self._snapshot_gen.requests_in_flight -= 1
+    async def _run_user(self, session_config: SessionConfig) -> None:
+        """Run a single virtual user, looping sessions until abort event is set."""
+        self._increment_active_users()
+        try:
+            while not self._abort_event.is_set():
+                async with self._semaphore:
+                    self._snapshot_gen.requests_in_flight += 1
+                    try:
+                        sim = ConversationSimulator(
+                            config=session_config,
+                            llm_client=self._llm_client,
+                            collector=self._collector,
+                            abort_event=self._abort_event,
+                        )
+                        await sim.run()
+                    finally:
+                        self._snapshot_gen.requests_in_flight -= 1
+        finally:
+            self._decrement_active_users()
 
     def _build_all_sessions(self) -> list[SessionConfig]:
         """Build SessionConfig for each virtual user from the scenario snapshot."""
@@ -358,57 +367,85 @@ class BenchmarkRunner:
         ws_manager.cleanup(self._benchmark_id)
 
     async def _compute_summary(self) -> dict:
-        """Compute aggregate results from benchmark_requests."""
+        """Compute percentile-based results from benchmark_requests."""
         try:
             async with self._session_factory() as session:
-                base = select(BenchmarkRequest).where(
-                    BenchmarkRequest.benchmark_id == self._benchmark_id
-                )
-
-                # Total counts
-                count_result = await session.execute(
-                    select(func.count(BenchmarkRequest.id)).where(
-                        BenchmarkRequest.benchmark_id == self._benchmark_id
-                    )
-                )
-                total = count_result.scalar() or 0
-
-                error_count_result = await session.execute(
-                    select(func.count(BenchmarkRequest.id)).where(
-                        BenchmarkRequest.benchmark_id == self._benchmark_id,
-                        BenchmarkRequest.error_type.isnot(None),
-                    )
-                )
-                errors = error_count_result.scalar() or 0
-
-                # Aggregates
-                agg_result = await session.execute(
+                result = await session.execute(
                     select(
-                        func.avg(BenchmarkRequest.ttft_ms),
-                        func.avg(BenchmarkRequest.tgt_ms),
-                        func.avg(BenchmarkRequest.tokens_per_second),
-                        func.sum(BenchmarkRequest.input_tokens),
-                        func.sum(BenchmarkRequest.output_tokens),
+                        BenchmarkRequest.turn_number,
+                        BenchmarkRequest.ttft_ms,
+                        BenchmarkRequest.tgt_ms,
+                        BenchmarkRequest.tokens_per_second,
+                        BenchmarkRequest.input_tokens,
+                        BenchmarkRequest.output_tokens,
+                        BenchmarkRequest.error_type,
+                        BenchmarkRequest.created_at,
                     ).where(
                         BenchmarkRequest.benchmark_id == self._benchmark_id
                     )
                 )
-                row = agg_result.one()
+                rows = result.all()
+
+                if not rows:
+                    return {"total_requests": 0, "error": "No requests recorded"}
+
+                total = len(rows)
+                errors = sum(1 for r in rows if r.error_type is not None)
+                ok_rows = [r for r in rows if r.error_type is None]
+
+                # TTFT split by turn number
+                ttft_t1 = [r.ttft_ms for r in ok_rows if r.ttft_ms is not None and r.turn_number == 0]
+                ttft_multi = [r.ttft_ms for r in ok_rows if r.ttft_ms is not None and r.turn_number > 0]
+                ttft_all = [r.ttft_ms for r in ok_rows if r.ttft_ms is not None]
+
+                # Generation speed
+                tps_all = [r.tokens_per_second for r in ok_rows if r.tokens_per_second is not None]
+
+                # Total generation time
+                tgt_all = [r.tgt_ms for r in ok_rows if r.tgt_ms is not None]
+
+                # Token totals
+                total_input = sum(r.input_tokens or 0 for r in rows)
+                total_output = sum(r.output_tokens or 0 for r in rows)
+
+                # Throughput: successful requests per second over actual run duration
+                timestamps = [r.created_at for r in rows if r.created_at is not None]
+                duration = 0.0
+                if len(timestamps) >= 2:
+                    duration = (max(timestamps) - min(timestamps)).total_seconds()
 
                 return {
                     "total_requests": total,
                     "successful_requests": total - errors,
                     "failed_requests": errors,
-                    "error_rate_pct": round((errors / total * 100), 2) if total > 0 else 0,
-                    "avg_ttft_ms": round(row[0], 2) if row[0] else None,
-                    "avg_tgt_ms": round(row[1], 2) if row[1] else None,
-                    "avg_tps": round(row[2], 2) if row[2] else None,
-                    "total_input_tokens": row[3] or 0,
-                    "total_output_tokens": row[4] or 0,
+                    "error_rate_pct": round(errors / total * 100, 2) if total > 0 else 0,
+                    # First-turn TTFT (primary LLM comparison metric)
+                    "ttft_t1_p50_ms": _round(percentile(ttft_t1, 50)),
+                    "ttft_t1_p95_ms": _round(percentile(ttft_t1, 95)),
+                    # All-turns TTFT
+                    "ttft_all_p50_ms": _round(percentile(ttft_all, 50)),
+                    "ttft_all_p95_ms": _round(percentile(ttft_all, 95)),
+                    # Multi-turn TTFT (context-heavy, null if single-turn only)
+                    "ttft_multi_p50_ms": _round(percentile(ttft_multi, 50)),
+                    "ttft_multi_p95_ms": _round(percentile(ttft_multi, 95)),
+                    # Generation speed
+                    "tps_p50": _round(percentile(tps_all, 50)),
+                    "tps_p5": _round(percentile(tps_all, 5)),
+                    # Total generation time
+                    "tgt_p50_ms": _round(percentile(tgt_all, 50)),
+                    "tgt_p95_ms": _round(percentile(tgt_all, 95)),
+                    # Totals
+                    "total_input_tokens": total_input,
+                    "total_output_tokens": total_output,
+                    "avg_throughput_rps": round((total - errors) / duration, 2) if duration > 0 else 0,
                 }
         except Exception:
             logger.exception("Error computing summary")
             return {"error": "Failed to compute summary"}
+
+
+def _round(value: float | None) -> float | None:
+    return round(value, 2) if value is not None else None
 
     async def _cleanup(self) -> None:
         if self._llm_client:

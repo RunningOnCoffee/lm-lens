@@ -1,0 +1,224 @@
+import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import useBenchmarkStore from '../stores/benchmarkStore';
+import useScenarioStore from '../stores/scenarioStore';
+
+const STATUS_STYLES = {
+  pending:   'bg-gray-500/20 text-gray-400',
+  running:   'bg-accent/20 text-accent',
+  completed: 'bg-green-500/20 text-green-400',
+  aborted:   'bg-warn/20 text-warn',
+  failed:    'bg-danger/20 text-danger',
+};
+
+function StatusBadge({ status }) {
+  return (
+    <span className={`px-2 py-0.5 text-[11px] rounded-full font-medium ${STATUS_STYLES[status] || STATUS_STYLES.pending}`}>
+      {status}
+    </span>
+  );
+}
+
+export default function Benchmarks() {
+  const { benchmarks, loading, error, fetchBenchmarks, startBenchmark, deleteBenchmark, abortBenchmark } = useBenchmarkStore();
+  const { scenarios, fetchScenarios } = useScenarioStore();
+  const navigate = useNavigate();
+
+  const [selectedScenario, setSelectedScenario] = useState('');
+  const [starting, setStarting] = useState(false);
+  const [actionError, setActionError] = useState(null);
+
+  useEffect(() => { fetchBenchmarks(); fetchScenarios(); }, [fetchBenchmarks, fetchScenarios]);
+
+  // Poll for status updates every 3s
+  useEffect(() => {
+    const hasActive = benchmarks.some((b) => b.status === 'running' || b.status === 'pending');
+    if (!hasActive) return;
+    const interval = setInterval(fetchBenchmarks, 3000);
+    return () => clearInterval(interval);
+  }, [benchmarks, fetchBenchmarks]);
+
+  const handleStart = async () => {
+    if (!selectedScenario) return;
+    setStarting(true);
+    setActionError(null);
+    try {
+      const benchmark = await startBenchmark(selectedScenario);
+      navigate(`/benchmarks/${benchmark.id}`);
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const handleAbort = async (id) => {
+    try {
+      setActionError(null);
+      await abortBenchmark(id);
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
+  const handleDelete = async (id) => {
+    try {
+      setActionError(null);
+      await deleteBenchmark(id);
+    } catch (err) {
+      setActionError(err.message);
+    }
+  };
+
+  const formatDuration = (seconds) => {
+    if (seconds == null) return '-';
+    if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
+    if (seconds >= 60) return `${Math.floor(seconds / 60)}m ${Math.floor(seconds % 60)}s`;
+    return `${Math.round(seconds)}s`;
+  };
+
+  const formatTime = (iso) => {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (loading && benchmarks.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <p className="text-gray-500">Loading benchmarks...</p>
+      </div>
+    );
+  }
+
+  const cols = 'grid-cols-[1fr_120px_100px_80px_100px_160px]';
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-6">
+        <h1 className="font-heading text-2xl font-bold">Benchmarks</h1>
+      </div>
+
+      {/* Start new benchmark */}
+      <div className="mb-6 p-4 bg-surface-800 border border-surface-600 rounded-xl">
+        <h2 className="font-heading text-sm uppercase tracking-wider text-gray-400 mb-3">Start New Benchmark</h2>
+        <div className="flex items-end gap-3">
+          <div className="flex-1">
+            <label className="block text-xs text-gray-500 mb-1">Scenario</label>
+            <select
+              value={selectedScenario}
+              onChange={(e) => setSelectedScenario(e.target.value)}
+              className="input w-full"
+            >
+              <option value="">Select a scenario...</option>
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name} — {s.model_name} ({s.total_users} users, {s.test_mode})
+                </option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={handleStart}
+            disabled={!selectedScenario || starting}
+            className="px-5 py-2 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+          >
+            {starting ? 'Starting...' : 'Run Benchmark'}
+          </button>
+        </div>
+      </div>
+
+      {(error || actionError) && (
+        <div className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-danger text-sm">
+          {error || actionError}
+        </div>
+      )}
+
+      {/* Benchmark list */}
+      <div className="bg-surface-800 border border-surface-600 rounded-xl overflow-hidden">
+        <div className={`grid ${cols} items-center px-4 py-2.5 border-b border-surface-600`}>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Scenario</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Status</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Requests</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Duration</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Started</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-right">Actions</span>
+        </div>
+
+        {benchmarks.map((b) => (
+          <BenchmarkRow
+            key={b.id}
+            benchmark={b}
+            cols={cols}
+            formatDuration={formatDuration}
+            formatTime={formatTime}
+            onView={() => navigate(`/benchmarks/${b.id}`)}
+            onAbort={() => handleAbort(b.id)}
+            onDelete={() => handleDelete(b.id)}
+          />
+        ))}
+
+        {benchmarks.length === 0 && (
+          <div className="px-4 py-8 text-center text-gray-600 text-sm">
+            No benchmarks yet. Select a scenario and click Run Benchmark to start one.
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function BenchmarkRow({ benchmark, cols, formatDuration, formatTime, onView, onAbort, onDelete }) {
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const isActive = benchmark.status === 'running' || benchmark.status === 'pending';
+
+  return (
+    <div className={`grid ${cols} items-center px-4 py-3 border-b border-surface-600/50 last:border-b-0 hover:bg-surface-700/50 transition-colors`}>
+      <div className="min-w-0 pr-4">
+        <span className="text-sm text-gray-200 font-medium truncate block">
+          {benchmark.scenario_name || 'Unknown Scenario'}
+        </span>
+        <span className="text-[10px] text-gray-600 font-mono">{benchmark.id.slice(0, 8)}</span>
+      </div>
+      <div className="flex justify-center">
+        <StatusBadge status={benchmark.status} />
+      </div>
+      <span className="text-xs text-gray-400 text-center tabular-nums">{benchmark.total_requests}</span>
+      <span className="text-xs text-gray-400 text-center tabular-nums">{formatDuration(benchmark.duration_seconds)}</span>
+      <span className="text-xs text-gray-400 text-center">{formatTime(benchmark.created_at)}</span>
+      <div className="flex items-center justify-end gap-1.5">
+        <button
+          onClick={onView}
+          className="px-2.5 py-1 text-[11px] rounded bg-accent/10 text-accent hover:bg-accent/20 transition-colors"
+        >
+          {isActive ? 'Live View' : 'Results'}
+        </button>
+        {isActive && (
+          <button
+            onClick={onAbort}
+            className="px-2.5 py-1 text-[11px] rounded bg-warn/10 text-warn hover:bg-warn/20 transition-colors"
+          >
+            Abort
+          </button>
+        )}
+        {!isActive && (
+          confirmDelete ? (
+            <button
+              onClick={() => { onDelete(); setConfirmDelete(false); }}
+              className="px-2.5 py-1 text-[11px] rounded bg-danger/20 text-danger hover:bg-danger/30 transition-colors"
+            >
+              Confirm
+            </button>
+          ) : (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              className="px-2.5 py-1 text-[11px] rounded bg-surface-700 text-gray-500 hover:text-danger hover:bg-surface-600 transition-colors"
+            >
+              Delete
+            </button>
+          )
+        )}
+      </div>
+    </div>
+  );
+}

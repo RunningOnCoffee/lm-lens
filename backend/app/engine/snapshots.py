@@ -72,13 +72,17 @@ class SnapshotGenerator:
         benchmark_id: UUID,
         collector: MetricCollector,
         session_factory,
+        profile_names: dict[str, str] | None = None,
     ) -> None:
         self._benchmark_id = benchmark_id
         self._collector = collector
         self._session_factory = session_factory
+        self._profile_names = profile_names or {}
         self._task: asyncio.Task | None = None
         self.active_users: int = 0
         self.requests_in_flight: int = 0
+        self.started_at: datetime | None = None
+        self.duration_seconds: float = 0
 
     async def start(self) -> None:
         self._task = asyncio.create_task(self._loop())
@@ -104,6 +108,17 @@ class SnapshotGenerator:
         except Exception:
             logger.exception("Failed to write snapshot")
 
+        # Compute rolling-window metrics (last ~30 seconds)
+        rolling = self._collector.rolling_results
+        rolling_ttft_all = [r.ttft_ms for r, _ in rolling if r.success and r.ttft_ms is not None]
+        rolling_ttft_t1 = [r.ttft_ms for r, t in rolling if r.success and r.ttft_ms is not None and t == 0]
+        rolling_tps = [r.tokens_per_second for r, _ in rolling if r.success and r.tokens_per_second is not None]
+
+        # Elapsed time
+        elapsed = 0.0
+        if self.started_at:
+            elapsed = (datetime.now(timezone.utc) - self.started_at).total_seconds()
+
         # Broadcast via WebSocket
         snapshot_data = {
             "timestamp": snapshot.timestamp.isoformat(),
@@ -111,6 +126,7 @@ class SnapshotGenerator:
             "requests_in_flight": snapshot.requests_in_flight,
             "completed_requests": snapshot.completed_requests,
             "failed_requests": snapshot.failed_requests,
+            # Per-window percentiles (for timeline charts)
             "p50_ttft_ms": snapshot.p50_ttft_ms,
             "p95_ttft_ms": snapshot.p95_ttft_ms,
             "p99_ttft_ms": snapshot.p99_ttft_ms,
@@ -121,6 +137,18 @@ class SnapshotGenerator:
             "throughput_tps": snapshot.throughput_tps,
             "error_count": snapshot.error_count,
             "per_profile": snapshot.per_profile,
+            # Rolling 30s percentiles — all turns
+            "rolling_p50_ttft_ms": percentile(rolling_ttft_all, 50),
+            "rolling_p95_ttft_ms": percentile(rolling_ttft_all, 95),
+            # Rolling 30s percentiles — first turn only (pure LLM responsiveness)
+            "rolling_p50_ttft_t1_ms": percentile(rolling_ttft_t1, 50),
+            "rolling_p95_ttft_t1_ms": percentile(rolling_ttft_t1, 95),
+            # Rolling 30s generation speed
+            "rolling_avg_tps": sum(rolling_tps) / len(rolling_tps) if rolling_tps else None,
+            "rolling_p5_tps": percentile(rolling_tps, 5),
+            # Timing
+            "elapsed_seconds": elapsed,
+            "duration_seconds": self.duration_seconds,
         }
         await ws_manager.broadcast(self._benchmark_id, snapshot_data)
 
@@ -137,14 +165,15 @@ class SnapshotGenerator:
         err_count = sum(1 for r in results if not r.success)
         total_output_tokens = sum(r.output_tokens or 0 for r in results)
 
-        # Per-profile breakdown
+        # Per-profile breakdown (use readable names)
         per_profile: dict[str, dict] = {}
         for result, pid in zip(results, profile_ids):
-            key = str(pid) if pid else "unknown"
+            pid_str = str(pid) if pid else "unknown"
+            key = self._profile_names.get(pid_str, pid_str[:8])
             if key not in per_profile:
                 per_profile[key] = {
                     "completed": 0, "failed": 0,
-                    "ttft_values": [], "tgt_values": [],
+                    "ttft_values": [], "tps_values": [],
                     "output_tokens": 0,
                 }
             entry = per_profile[key]
@@ -154,14 +183,15 @@ class SnapshotGenerator:
                 entry["failed"] += 1
             if result.ttft_ms is not None:
                 entry["ttft_values"].append(result.ttft_ms)
-            if result.tgt_ms is not None:
-                entry["tgt_values"].append(result.tgt_ms)
+            if result.tokens_per_second is not None:
+                entry["tps_values"].append(result.tokens_per_second)
             entry["output_tokens"] += result.output_tokens or 0
 
         # Compute per-profile percentiles and clean up raw values
         for entry in per_profile.values():
             entry["p50_ttft_ms"] = percentile(entry.pop("ttft_values"), 50)
-            entry["p50_tgt_ms"] = percentile(entry.pop("tgt_values"), 50)
+            tps_vals = entry.pop("tps_values")
+            entry["avg_tps"] = sum(tps_vals) / len(tps_vals) if tps_vals else None
 
         return BenchmarkSnapshot(
             id=uuid.uuid4(),

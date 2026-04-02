@@ -64,12 +64,17 @@
 - [x] Pytest tests for engine components (27 new tests, 52 total passing)
 
 ## Phase 6: Live Dashboard
-- [ ] Frontend: Benchmark run page with real-time charts
-- [ ] Health timeline (concurrency vs latency percentiles)
-- [ ] Per-profile latency breakdown
-- [ ] Throughput gauge (tokens/sec, requests/sec)
-- [ ] Error rate indicator
-- [ ] Active sessions / turns counter
+- [x] Frontend: Benchmark list page (start, abort, delete, scenario picker, status polling)
+- [x] Frontend: Benchmark run page with real-time metric cards (live + summary modes)
+- [x] WebSocket hook with reconnect, benchmark Zustand store
+- [x] Backend: cumulative metrics in WebSocket snapshots, elapsed_seconds timing
+- [x] Backend: GET /benchmarks/{id}/snapshots endpoint with computed elapsed_seconds
+- [x] Health timeline (TTFT p50/p95/p99 over time + active users overlay)
+- [x] Per-profile latency breakdown (bar chart, p50/p95 TTFT per profile)
+- [x] Throughput chart (tokens/sec area + min tok/s + requests/sec)
+- [x] Error rate chart (errors over time, green "no errors" state)
+- [x] Countdown timer + progress bar during active runs
+- [x] Status badges, abort button, live indicator
 - [ ] Auto-scroll request log
 
 ## Phase 7: Results & Response Browser
@@ -91,6 +96,7 @@
 - [ ] Cost estimation (user-provided $/token rate)
 - [ ] Error categorization (timeout, rate limit, malformed, refusal)
 - [ ] Endpoint quick-test UI (send one request, see raw response)
+- [ ] Expected throughput estimate in scenario builder (warn when think_time × users × duration yields very few requests)
 - [ ] Responsive layout refinements
 - [ ] Loading states and empty states
 - [ ] Documentation

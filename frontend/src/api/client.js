@@ -48,4 +48,5 @@ export const benchmarksApi = {
   start: (scenarioId) => api.post('/benchmarks', { scenario_id: scenarioId }),
   delete: (id) => api.del(`/benchmarks/${id}`),
   abort: (id) => api.post(`/benchmarks/${id}/abort`),
+  snapshots: (id) => api.get(`/benchmarks/${id}/snapshots`),
 };

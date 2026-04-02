@@ -11,9 +11,9 @@ from sqlalchemy.orm import selectinload
 from app.database import async_session, get_db
 from app.engine.runner import BenchmarkRunner, get_active_runner
 from app.engine.snapshots import ws_manager
-from app.models.benchmark import Benchmark, BenchmarkRequest
+from app.models.benchmark import Benchmark, BenchmarkRequest, BenchmarkSnapshot
 from app.models.scenario import Scenario, ScenarioProfile
-from app.schemas.benchmark import BenchmarkCreate, BenchmarkRead, BenchmarkSummary
+from app.schemas.benchmark import BenchmarkCreate, BenchmarkRead, BenchmarkSnapshotRead, BenchmarkSummary
 
 logger = logging.getLogger(__name__)
 
@@ -234,6 +234,31 @@ async def get_benchmark(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
             scenario_name=benchmark.scenario_snapshot.get("name", "") if benchmark.scenario_snapshot else "",
         ).model_dump(mode="json")
     }
+
+
+@router.get("/{benchmark_id}/snapshots")
+async def get_benchmark_snapshots(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get historical per-second snapshots for a benchmark with computed elapsed_seconds."""
+    await _get_benchmark_or_404(benchmark_id, db)
+
+    result = await db.execute(
+        select(BenchmarkSnapshot)
+        .where(BenchmarkSnapshot.benchmark_id == benchmark_id)
+        .order_by(BenchmarkSnapshot.timestamp)
+    )
+    snapshots = result.scalars().all()
+
+    if not snapshots:
+        return {"data": []}
+
+    first_ts = snapshots[0].timestamp
+    data = []
+    for s in snapshots:
+        d = BenchmarkSnapshotRead.model_validate(s).model_dump(mode="json")
+        d["elapsed_seconds"] = (s.timestamp - first_ts).total_seconds()
+        data.append(d)
+
+    return {"data": data}
 
 
 @router.delete("/{benchmark_id}")

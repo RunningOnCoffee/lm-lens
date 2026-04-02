@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from collections import deque
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -23,12 +24,17 @@ class MetricCollector:
         self._flush_batch_size = 100
         self._flush_interval = 1.0
 
-        # In-memory window for snapshot generator
+        # In-memory window for snapshot generator (drained every 1s)
         self._window: list[LLMRequestResult] = []
         self._window_profiles: list[UUID | None] = []
         self._window_lock = asyncio.Lock()
         self._total_completed = 0
         self._total_failed = 0
+
+        # Rolling 30-second window for live metric cards
+        # Each deque entry is one second's batch of (result, turn_number) tuples
+        self._rolling_deque: deque[list[tuple[LLMRequestResult, int]]] = deque(maxlen=30)
+        self._rolling_staging: list[tuple[LLMRequestResult, int]] = []
 
         self._flush_task: asyncio.Task | None = None
 
@@ -68,6 +74,7 @@ class MetricCollector:
         async with self._window_lock:
             self._window.append(result)
             self._window_profiles.append(profile_id)
+            self._rolling_staging.append((result, turn_number))
             if result.success:
                 self._total_completed += 1
             else:
@@ -108,6 +115,13 @@ class MetricCollector:
             profiles = self._window_profiles
             self._window = []
             self._window_profiles = []
+            # Push this second's results into the rolling deque
+            if self._rolling_staging:
+                self._rolling_deque.append(self._rolling_staging)
+                self._rolling_staging = []
+            else:
+                # Still push an empty batch so the deque advances each second
+                self._rolling_deque.append([])
             return results, profiles
 
     @property
@@ -117,6 +131,11 @@ class MetricCollector:
     @property
     def total_failed(self) -> int:
         return self._total_failed
+
+    @property
+    def rolling_results(self) -> list[tuple[LLMRequestResult, int]]:
+        """Flattened list of (result, turn_number) from the last ~30 seconds."""
+        return [item for batch in self._rolling_deque for item in batch]
 
     async def stop(self) -> None:
         if self._flush_task:

@@ -1,5 +1,7 @@
 import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
+import Benchmarks from './pages/Benchmarks';
+import BenchmarkRun from './pages/BenchmarkRun';
 import Profiles from './pages/Profiles';
 import ProfileEditor from './pages/ProfileEditor';
 import ProfileView from './pages/ProfileView';
@@ -35,17 +37,6 @@ function Sidebar() {
   );
 }
 
-function Placeholder({ title }) {
-  return (
-    <div className="flex items-center justify-center h-full">
-      <div className="text-center">
-        <h2 className="font-heading text-2xl text-gray-400 mb-2">{title}</h2>
-        <p className="text-gray-600 text-sm">Coming soon</p>
-      </div>
-    </div>
-  );
-}
-
 export default function App() {
   return (
     <BrowserRouter>
@@ -54,7 +45,8 @@ export default function App() {
         <main className="flex-1 p-6">
           <Routes>
             <Route path="/" element={<Dashboard />} />
-            <Route path="/benchmarks" element={<Placeholder title="Benchmarks" />} />
+            <Route path="/benchmarks" element={<Benchmarks />} />
+            <Route path="/benchmarks/:id" element={<BenchmarkRun />} />
             <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/scenarios/new" element={<ScenarioEditor />} />
             <Route path="/scenarios/:id/edit" element={<ScenarioEditor />} />
