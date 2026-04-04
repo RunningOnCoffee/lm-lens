@@ -392,6 +392,7 @@ class BenchmarkRunner:
                         BenchmarkRequest.input_tokens,
                         BenchmarkRequest.output_tokens,
                         BenchmarkRequest.error_type,
+                        BenchmarkRequest.quality_flags,
                         BenchmarkRequest.created_at,
                     ).where(
                         BenchmarkRequest.benchmark_id == self._benchmark_id
@@ -427,11 +428,19 @@ class BenchmarkRunner:
                 if len(timestamps) >= 2:
                     duration = (max(timestamps) - min(timestamps)).total_seconds()
 
+                # Quality flag counts
+                qf_counts: dict[str, int] = {}
+                for r in rows:
+                    if r.quality_flags:
+                        for flag in r.quality_flags:
+                            qf_counts[flag] = qf_counts.get(flag, 0) + 1
+
                 return {
                     "total_requests": total,
                     "successful_requests": total - errors,
                     "failed_requests": errors,
                     "error_rate_pct": round(errors / total * 100, 2) if total > 0 else 0,
+                    "quality_flags": qf_counts,
                     # First-turn TTFT (primary LLM comparison metric)
                     "ttft_t1_p50_ms": _round(percentile(ttft_t1, 50)),
                     "ttft_t1_p95_ms": _round(percentile(ttft_t1, 95)),

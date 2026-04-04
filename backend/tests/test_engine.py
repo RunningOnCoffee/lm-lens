@@ -11,7 +11,7 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
 from app.engine.llm_client import LLMClient, LLMRequestResult, _normalize_url
-from app.engine.collector import MetricCollector
+from app.engine.collector import MetricCollector, _compute_quality_flags
 from app.engine.conversation import ConversationSimulator, SessionConfig
 from app.engine.snapshots import SnapshotGenerator, WebSocketManager, percentile
 
@@ -259,13 +259,14 @@ async def test_collector_record_and_window():
     assert collector.total_completed == 1
     assert collector.total_failed == 1
 
-    results, profiles = await collector.take_window()
+    results, profiles, turns = await collector.take_window()
     assert len(results) == 2
     assert len(profiles) == 2
+    assert len(turns) == 2
     assert profiles[0] == profile_id
 
     # Window should be empty after take
-    results2, profiles2 = await collector.take_window()
+    results2, profiles2, turns2 = await collector.take_window()
     assert len(results2) == 0
     assert len(profiles2) == 0
 
@@ -302,9 +303,12 @@ async def test_snapshot_compute():
     assert snapshot.throughput_tps == 130.0  # 50 + 80 + 0
     assert snapshot.error_count == 1
     assert snapshot.per_profile is not None
-    assert str(profile_a) in snapshot.per_profile
-    assert snapshot.per_profile[str(profile_a)]["completed"] == 2
-    assert snapshot.per_profile[str(profile_b)]["failed"] == 1
+    # Snapshot generator uses short profile IDs (first 8 chars) when no profile_names mapping
+    key_a = str(profile_a)[:8]
+    key_b = str(profile_b)[:8]
+    assert key_a in snapshot.per_profile
+    assert snapshot.per_profile[key_a]["completed"] == 2
+    assert snapshot.per_profile[key_b]["failed"] == 1
 
 
 # ---------------------------------------------------------------------------
@@ -507,3 +511,84 @@ async def test_conversation_follow_up_priority():
     # Second call's last message should be the template follow-up
     second_call_prompt = fake_llm.calls[1][-1]["content"]
     assert second_call_prompt == "Template follow-up"
+
+
+# ---------------------------------------------------------------------------
+# Quality Flag Detection Tests
+# ---------------------------------------------------------------------------
+
+def test_quality_flag_empty_response():
+    """Empty response text triggers 'empty' flag."""
+    result = LLMRequestResult(success=True, response_text="", output_tokens=0)
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "empty" in flags
+
+
+def test_quality_flag_none_response():
+    """None response text triggers 'empty' flag."""
+    result = LLMRequestResult(success=True, response_text=None, output_tokens=5)
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "empty" in flags
+
+
+def test_quality_flag_truncated():
+    """finish_reason='length' triggers 'truncated' flag."""
+    result = LLMRequestResult(
+        success=True,
+        response_text="Some truncated output...",
+        output_tokens=100,
+        finish_reason="length",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "truncated" in flags
+
+
+def test_quality_flag_refusal():
+    """Refusal patterns in response trigger 'refusal' flag."""
+    result = LLMRequestResult(
+        success=True,
+        response_text="I cannot provide that information as an AI language model.",
+        output_tokens=10,
+        finish_reason="stop",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "refusal" in flags
+
+
+def test_quality_flag_no_flags():
+    """Normal response has no quality flags."""
+    result = LLMRequestResult(
+        success=True,
+        response_text="Here is a perfectly normal helpful response about Python programming.",
+        output_tokens=10,
+        finish_reason="stop",
+        inter_token_latencies=[10.0, 15.0, 8.0, 12.0, 20.0],
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None
+
+
+def test_quality_flag_repeated_tokens():
+    """Very uniform ITL with many tokens triggers 'repeated_tokens' flag."""
+    # 60 tokens with nearly identical inter-token latencies
+    itls = [10.0] * 60
+    result = LLMRequestResult(
+        success=True,
+        response_text="word " * 60,
+        output_tokens=60,
+        finish_reason="stop",
+        inter_token_latencies=itls,
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "repeated_tokens" in flags
+
+
+def test_quality_flag_finish_reason_captured():
+    """LLMRequestResult correctly stores finish_reason."""
+    result = LLMRequestResult(finish_reason="length")
+    assert result.finish_reason == "length"

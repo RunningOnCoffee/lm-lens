@@ -30,6 +30,9 @@ export default function Benchmarks() {
   const [selectedEndpoint, setSelectedEndpoint] = useState('');
   const [starting, setStarting] = useState(false);
   const [actionError, setActionError] = useState(null);
+  const [selected, setSelected] = useState(new Set());
+  const [confirming, setConfirming] = useState(false);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => { fetchBenchmarks(); fetchScenarios(); fetchEndpoints(); }, [fetchBenchmarks, fetchScenarios, fetchEndpoints]);
 
@@ -68,8 +71,47 @@ export default function Benchmarks() {
     try {
       setActionError(null);
       await deleteBenchmark(id);
+      setSelected((prev) => { const next = new Set(prev); next.delete(id); return next; });
     } catch (err) {
       setActionError(err.message);
+    }
+  };
+
+  // Multi-select helpers
+  const deletableIds = benchmarks
+    .filter((b) => b.status !== 'running' && b.status !== 'pending')
+    .map((b) => b.id);
+  const allSelected = deletableIds.length > 0 && deletableIds.every((id) => selected.has(id));
+  const someSelected = selected.size > 0;
+
+  const toggleSelect = (id) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+    setConfirming(false);
+  };
+
+  const toggleSelectAll = () => {
+    setSelected(allSelected ? new Set() : new Set(deletableIds));
+    setConfirming(false);
+  };
+
+  const handleBulkDelete = async () => {
+    if (!confirming) { setConfirming(true); return; }
+    setBusy(true);
+    setActionError(null);
+    try {
+      for (const id of selected) {
+        await deleteBenchmark(id);
+      }
+      setSelected(new Set());
+      setConfirming(false);
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setBusy(false);
     }
   };
 
@@ -94,7 +136,7 @@ export default function Benchmarks() {
     );
   }
 
-  const cols = 'grid-cols-[1fr_140px_120px_100px_80px_100px_160px]';
+  const cols = 'grid-cols-[40px_1fr_140px_120px_100px_80px_100px_160px]';
 
   return (
     <div>
@@ -152,9 +194,43 @@ export default function Benchmarks() {
         </div>
       )}
 
+      {/* Bulk action bar */}
+      {someSelected && (
+        <div className="mb-2 flex items-center gap-3 px-4 py-2.5 bg-surface-800 border border-surface-600 rounded-lg">
+          <span className="text-xs text-gray-400">{selected.size} selected</span>
+          <div className="h-4 w-px bg-surface-600" />
+          <button
+            onClick={handleBulkDelete}
+            disabled={busy}
+            className={`px-3 py-1 text-xs rounded transition-colors disabled:opacity-50 ${
+              confirming
+                ? 'bg-danger/20 text-danger hover:bg-danger/30'
+                : 'bg-surface-700 text-gray-300 hover:text-danger hover:bg-surface-600'
+            }`}
+          >
+            {confirming ? `Confirm Delete (${selected.size})` : `Delete (${selected.size})`}
+          </button>
+          <button
+            onClick={() => { setSelected(new Set()); setConfirming(false); }}
+            className="ml-auto px-2 py-1 text-xs text-gray-500 hover:text-gray-300 transition-colors"
+          >
+            Clear
+          </button>
+        </div>
+      )}
+
       {/* Benchmark list */}
       <div className="bg-surface-800 border border-surface-600 rounded-xl overflow-hidden">
         <div className={`grid ${cols} items-center px-4 py-2.5 border-b border-surface-600`}>
+          <div className="flex items-center justify-center">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleSelectAll}
+              className="accent-accent w-3.5 h-3.5 cursor-pointer"
+              title="Select all completed"
+            />
+          </div>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Scenario</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Endpoint</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Status</span>
@@ -164,18 +240,24 @@ export default function Benchmarks() {
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-right">Actions</span>
         </div>
 
-        {benchmarks.map((b) => (
-          <BenchmarkRow
-            key={b.id}
-            benchmark={b}
-            cols={cols}
-            formatDuration={formatDuration}
-            formatTime={formatTime}
-            onView={() => navigate(`/benchmarks/${b.id}`)}
-            onAbort={() => handleAbort(b.id)}
-            onDelete={() => handleDelete(b.id)}
-          />
-        ))}
+        {benchmarks.map((b) => {
+          const isDeletable = b.status !== 'running' && b.status !== 'pending';
+          return (
+            <BenchmarkRow
+              key={b.id}
+              benchmark={b}
+              cols={cols}
+              isSelected={selected.has(b.id)}
+              isDeletable={isDeletable}
+              onToggle={() => toggleSelect(b.id)}
+              formatDuration={formatDuration}
+              formatTime={formatTime}
+              onView={() => navigate(`/benchmarks/${b.id}`)}
+              onAbort={() => handleAbort(b.id)}
+              onDelete={() => handleDelete(b.id)}
+            />
+          );
+        })}
 
         {benchmarks.length === 0 && (
           <div className="px-4 py-8 text-center text-gray-600 text-sm">
@@ -187,12 +269,26 @@ export default function Benchmarks() {
   );
 }
 
-function BenchmarkRow({ benchmark, cols, formatDuration, formatTime, onView, onAbort, onDelete }) {
+function BenchmarkRow({ benchmark, cols, isSelected, isDeletable, onToggle, formatDuration, formatTime, onView, onAbort, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isActive = benchmark.status === 'running' || benchmark.status === 'pending';
 
   return (
-    <div className={`grid ${cols} items-center px-4 py-3 border-b border-surface-600/50 last:border-b-0 hover:bg-surface-700/50 transition-colors`}>
+    <div className={`grid ${cols} items-center px-4 py-3 border-b border-surface-600/50 last:border-b-0 transition-colors ${
+      isSelected ? 'bg-accent/5' : 'hover:bg-surface-700/50'
+    }`}>
+      <div className="flex items-center justify-center">
+        {isDeletable ? (
+          <input
+            type="checkbox"
+            checked={isSelected}
+            onChange={onToggle}
+            className="accent-accent w-3.5 h-3.5 cursor-pointer"
+          />
+        ) : (
+          <div className="w-3.5 h-3.5" />
+        )}
+      </div>
       <div className="min-w-0 pr-4">
         <span className="text-sm text-gray-200 font-medium truncate block">
           {benchmark.scenario_name || 'Unknown Scenario'}

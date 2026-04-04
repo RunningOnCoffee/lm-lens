@@ -24,9 +24,6 @@ async def _create_scenario(client, profile_ids=None, **overrides):
 
     body = {
         "name": overrides.get("name", "Test Scenario"),
-        "description": overrides.get("description", "A test scenario"),
-        "endpoint_url": overrides.get("endpoint_url", "http://lm-lens-mock:8000"),
-        "model_name": overrides.get("model_name", "mock-model"),
         "profiles": profiles,
     }
     body.update({k: v for k, v in overrides.items() if k not in body})
@@ -51,8 +48,6 @@ async def test_create_scenario(client):
 
     body = {
         "name": "Test Scenario",
-        "endpoint_url": "http://lm-lens-mock:8000",
-        "model_name": "mock-model",
         "profiles": [
             {"profile_id": p1, "user_count": 7},
             {"profile_id": p2, "user_count": 3},
@@ -82,8 +77,6 @@ async def test_create_scenario_no_profiles(client):
 async def test_create_scenario_with_load_config(client):
     body = {
         "name": "Breaking Point Test",
-        "endpoint_url": "http://lm-lens-mock:8000",
-        "model_name": "mock-model",
         "load_config": {
             "test_mode": "breaking_point",
             "duration_seconds": 300,
@@ -107,8 +100,6 @@ async def test_create_scenario_with_load_config(client):
 async def test_create_scenario_optional_max_tokens(client):
     body = {
         "name": "No Token Limit",
-        "endpoint_url": "http://lm-lens-mock:8000",
-        "model_name": "mock-model",
         "llm_params": {
             "max_tokens": None,
             "temperature": 0.5,
@@ -157,7 +148,6 @@ async def test_update_scenario(client):
         f"/api/v1/scenarios/{scenario_id}",
         json={
             "name": "After Update",
-            "endpoint_url": "http://new-endpoint:8080",
             "llm_params": {"max_tokens": 2048, "temperature": 0.5, "top_p": 0.9,
                            "stop": [], "frequency_penalty": 0.0, "presence_penalty": 0.0},
         },
@@ -165,7 +155,6 @@ async def test_update_scenario(client):
     assert resp.status_code == 200
     data = resp.json()["data"]
     assert data["name"] == "After Update"
-    assert data["endpoint_url"] == "http://new-endpoint:8080"
     assert data["llm_params"]["max_tokens"] == 2048
 
 
@@ -226,8 +215,6 @@ async def test_list_scenario_summary_total_users(client):
     p2 = await _create_profile(client, "Summary Profile B")
     body = {
         "name": "Summary Test",
-        "endpoint_url": "http://lm-lens-mock:8000",
-        "model_name": "mock-model",
         "profiles": [
             {"profile_id": p1, "user_count": 7},
             {"profile_id": p2, "user_count": 3},

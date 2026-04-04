@@ -59,5 +59,38 @@ export const benchmarksApi = {
   delete: (id) => api.del(`/benchmarks/${id}`),
   abort: (id) => api.post(`/benchmarks/${id}/abort`),
   snapshots: (id) => api.get(`/benchmarks/${id}/snapshots`),
-  requests: (id) => api.get(`/benchmarks/${id}/requests`),
+  requests: (id, params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v != null && v !== '')
+    ).toString();
+    return api.get(`/benchmarks/${id}/requests${qs ? `?${qs}` : ''}`);
+  },
+  histogram: (id, params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v != null && v !== '')
+    ).toString();
+    return api.get(`/benchmarks/${id}/histogram${qs ? `?${qs}` : ''}`);
+  },
+  profileStats: (id) => api.get(`/benchmarks/${id}/profile-stats`),
+  compare: (idA, idB) => api.get(`/benchmarks/compare?ids=${idA},${idB}`),
+  exportJSON: async (id) => {
+    const resp = await fetch(`${BASE_URL}/benchmarks/export/${id}?format=json`);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `benchmark_${id}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
+  exportCSV: async (id) => {
+    const resp = await fetch(`${BASE_URL}/benchmarks/export/${id}?format=csv`);
+    const blob = await resp.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `benchmark_${id}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  },
 };

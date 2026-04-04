@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import uuid
 from collections import deque
 from datetime import datetime, timezone
@@ -11,6 +12,47 @@ from app.engine.llm_client import LLMRequestResult
 from app.models.benchmark import BenchmarkRequest
 
 logger = logging.getLogger(__name__)
+
+# Refusal detection patterns
+_REFUSAL_PATTERNS = re.compile(
+    r"(?i)\b("
+    r"I cannot|I can't|I'm not able to|I am not able to|"
+    r"I'm unable to|I am unable to|"
+    r"I must decline|I have to decline|"
+    r"as an AI|as a language model|as an artificial intelligence"
+    r")\b"
+)
+
+
+def _compute_quality_flags(result: LLMRequestResult) -> list[str] | None:
+    """Compute quality flags for a completed request."""
+    flags: list[str] = []
+
+    # Empty response
+    if not result.response_text or (result.output_tokens is not None and result.output_tokens == 0):
+        flags.append("empty")
+        return flags  # No point checking other flags on empty
+
+    # Truncated (hit max_tokens)
+    if result.finish_reason == "length":
+        flags.append("truncated")
+
+    # Refusal detection
+    if result.response_text and _REFUSAL_PATTERNS.search(result.response_text):
+        flags.append("refusal")
+
+    # Repeated tokens — detect via low ITL variance (suspiciously uniform generation)
+    itls = result.inter_token_latencies
+    if itls and len(itls) >= 20:
+        mean = sum(itls) / len(itls)
+        if mean > 0:
+            variance = sum((x - mean) ** 2 for x in itls) / len(itls)
+            cv = (variance ** 0.5) / mean  # coefficient of variation
+            # Very low CV with many tokens suggests degenerate repetition
+            if cv < 0.1 and result.output_tokens and result.output_tokens > 50:
+                flags.append("repeated_tokens")
+
+    return flags if flags else None
 
 
 class MetricCollector:
@@ -65,6 +107,7 @@ class MetricCollector:
             model_reported=result.model_reported,
             request_body=result.request_body,
             response_text=result.response_text or None,
+            quality_flags=_compute_quality_flags(result) if result.success else None,
             created_at=datetime.now(timezone.utc),
         )
 

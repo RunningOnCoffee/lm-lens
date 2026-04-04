@@ -1,24 +1,41 @@
 import asyncio
+import csv
+import io
 import logging
 from datetime import datetime, timezone
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session, get_db
 from app.engine.runner import BenchmarkRunner, get_active_runner
-from app.engine.snapshots import ws_manager
+from app.engine.snapshots import percentile, ws_manager
 from app.models.benchmark import Benchmark, BenchmarkRequest, BenchmarkSnapshot
 from app.models.endpoint import Endpoint
 from app.models.scenario import Scenario, ScenarioProfile
-from app.schemas.benchmark import BenchmarkCreate, BenchmarkRead, BenchmarkSnapshotRead, BenchmarkSummary
+from app.schemas.benchmark import (
+    BenchmarkCreate,
+    BenchmarkRead,
+    BenchmarkRequestRead,
+    BenchmarkSnapshotRead,
+    BenchmarkSummary,
+    HistogramBin,
+    HistogramResponse,
+    HistogramStats,
+    ProfileStatsEntry,
+)
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
+
+
+def _round(value: float | None) -> float | None:
+    return round(value, 2) if value is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -33,6 +50,31 @@ async def _get_benchmark_or_404(benchmark_id: UUID, db: AsyncSession) -> Benchma
     if not benchmark:
         raise HTTPException(status_code=404, detail="Benchmark not found")
     return benchmark
+
+
+def _profile_name_map(benchmark: Benchmark) -> dict[str, str]:
+    """Build a profile_id→name mapping from a benchmark's scenario snapshot."""
+    names: dict[str, str] = {}
+    snap = benchmark.scenario_snapshot or {}
+    for sp in snap.get("profiles", []):
+        profile = sp.get("profile", {})
+        pid = str(profile.get("id", ""))
+        name = profile.get("name", pid[:8] if pid else "unknown")
+        if pid:
+            names[pid] = name
+    return names
+
+
+# Allowed sort columns for requests endpoint
+_REQUEST_SORT_COLUMNS = {
+    "created_at": BenchmarkRequest.created_at,
+    "ttft_ms": BenchmarkRequest.ttft_ms,
+    "tgt_ms": BenchmarkRequest.tgt_ms,
+    "tokens_per_second": BenchmarkRequest.tokens_per_second,
+    "output_tokens": BenchmarkRequest.output_tokens,
+    "input_tokens": BenchmarkRequest.input_tokens,
+    "turn_number": BenchmarkRequest.turn_number,
+}
 
 
 def _build_scenario_snapshot(scenario, scenario_profiles) -> dict:
@@ -245,6 +287,116 @@ async def list_benchmarks(db: AsyncSession = Depends(get_db)):
     return {"data": items, "meta": {"total": len(items)}}
 
 
+@router.get("/compare")
+async def compare_benchmarks(
+    ids: str = Query(..., description="Comma-separated benchmark UUIDs (exactly 2)"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compare two benchmark runs side by side."""
+    parts = [p.strip() for p in ids.split(",") if p.strip()]
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="Provide exactly 2 comma-separated benchmark IDs")
+
+    try:
+        id_a, id_b = UUID(parts[0]), UUID(parts[1])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    bench_a = await _get_benchmark_or_404(id_a, db)
+    bench_b = await _get_benchmark_or_404(id_b, db)
+
+    ep_snap_a = bench_a.endpoint_snapshot or {}
+    ep_snap_b = bench_b.endpoint_snapshot or {}
+
+    benchmarks = [
+        BenchmarkRead(
+            id=b.id, scenario_id=b.scenario_id, endpoint_id=b.endpoint_id,
+            status=b.status, scenario_snapshot=b.scenario_snapshot,
+            endpoint_snapshot=b.endpoint_snapshot, results_summary=b.results_summary,
+            error_message=b.error_message, started_at=b.started_at,
+            completed_at=b.completed_at, created_at=b.created_at, updated_at=b.updated_at,
+            scenario_name=b.scenario_snapshot.get("name", "") if b.scenario_snapshot else "",
+            endpoint_name=ep.get("name", ""),
+        ).model_dump(mode="json")
+        for b, ep in [(bench_a, ep_snap_a), (bench_b, ep_snap_b)]
+    ]
+
+    return {"data": {"benchmarks": benchmarks}}
+
+
+@router.get("/export/{benchmark_id}")
+async def export_benchmark(
+    benchmark_id: UUID,
+    format: str = Query("json"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export benchmark request data as JSON or CSV."""
+    benchmark = await _get_benchmark_or_404(benchmark_id, db)
+    profile_names = _profile_name_map(benchmark)
+
+    result = await db.execute(
+        select(BenchmarkRequest)
+        .where(BenchmarkRequest.benchmark_id == benchmark_id)
+        .order_by(BenchmarkRequest.created_at)
+    )
+    rows = result.scalars().all()
+
+    if format == "csv":
+        csv_fields = [
+            "profile_name", "session_id", "turn_number", "ttft_ms", "tgt_ms",
+            "input_tokens", "output_tokens", "tokens_per_second",
+            "http_status", "error_type", "error_detail", "model_reported",
+            "quality_flags", "response_text", "created_at",
+        ]
+
+        def generate_csv():
+            buf = io.StringIO()
+            writer = csv.DictWriter(buf, fieldnames=csv_fields)
+            writer.writeheader()
+            yield buf.getvalue()
+            buf.seek(0)
+            buf.truncate(0)
+
+            for r in rows:
+                pid = str(r.profile_id) if r.profile_id else ""
+                writer.writerow({
+                    "profile_name": profile_names.get(pid, pid[:8]),
+                    "session_id": str(r.session_id),
+                    "turn_number": r.turn_number,
+                    "ttft_ms": r.ttft_ms,
+                    "tgt_ms": r.tgt_ms,
+                    "input_tokens": r.input_tokens,
+                    "output_tokens": r.output_tokens,
+                    "tokens_per_second": r.tokens_per_second,
+                    "http_status": r.http_status,
+                    "error_type": r.error_type or "",
+                    "error_detail": r.error_detail or "",
+                    "model_reported": r.model_reported or "",
+                    "quality_flags": ",".join(r.quality_flags) if r.quality_flags else "",
+                    "response_text": (r.response_text or "")[:500],
+                    "created_at": r.created_at.isoformat() if r.created_at else "",
+                })
+                yield buf.getvalue()
+                buf.seek(0)
+                buf.truncate(0)
+
+        return StreamingResponse(
+            generate_csv(),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename=benchmark_{benchmark_id}.csv"},
+        )
+
+    # JSON format (default)
+    data = []
+    for r in rows:
+        item = BenchmarkRequestRead.model_validate(r).model_dump(mode="json")
+        pid = str(r.profile_id) if r.profile_id else ""
+        item["profile_name"] = profile_names.get(pid, pid[:8] if pid else "unknown")
+        data.append(item)
+
+    return {"data": data}
+
+
 @router.get("/{benchmark_id}")
 async def get_benchmark(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get benchmark details including results summary."""
@@ -297,50 +449,181 @@ async def get_benchmark_snapshots(benchmark_id: UUID, db: AsyncSession = Depends
 
 
 @router.get("/{benchmark_id}/requests")
-async def get_benchmark_requests(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
-    """Get individual request log entries for a benchmark."""
-    from app.models.profile import Profile
+async def get_benchmark_requests(
+    benchmark_id: UUID,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(50, ge=1, le=200),
+    profile_id: UUID | None = Query(None),
+    turn_number: int | None = Query(None),
+    error_type: str | None = Query(None),
+    quality_flag: str | None = Query(None),
+    success: bool | None = Query(None),
+    session_id: UUID | None = Query(None),
+    sort_by: str = Query("created_at"),
+    sort_dir: str = Query("asc"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get paginated request log entries with filtering and sorting."""
+    benchmark = await _get_benchmark_or_404(benchmark_id, db)
+    profile_names = _profile_name_map(benchmark)
 
-    await _get_benchmark_or_404(benchmark_id, db)
+    # Build query with filters
+    query = select(BenchmarkRequest).where(BenchmarkRequest.benchmark_id == benchmark_id)
 
-    result = await db.execute(
-        select(
-            BenchmarkRequest.error_type,
-            BenchmarkRequest.profile_id,
-            BenchmarkRequest.turn_number,
-            BenchmarkRequest.ttft_ms,
-            BenchmarkRequest.tokens_per_second,
-            BenchmarkRequest.output_tokens,
-            BenchmarkRequest.http_status,
+    if profile_id is not None:
+        query = query.where(BenchmarkRequest.profile_id == profile_id)
+    if turn_number is not None:
+        query = query.where(BenchmarkRequest.turn_number == turn_number)
+    if error_type is not None:
+        query = query.where(BenchmarkRequest.error_type == error_type)
+    if session_id is not None:
+        query = query.where(BenchmarkRequest.session_id == session_id)
+    if success is not None:
+        if success:
+            query = query.where(BenchmarkRequest.error_type.is_(None))
+        else:
+            query = query.where(BenchmarkRequest.error_type.isnot(None))
+    if quality_flag is not None:
+        query = query.where(
+            BenchmarkRequest.quality_flags.contains([quality_flag])
         )
-        .where(BenchmarkRequest.benchmark_id == benchmark_id)
-        .order_by(BenchmarkRequest.created_at)
-    )
-    rows = result.all()
 
-    # Resolve profile names
-    profile_ids = {r.profile_id for r in rows if r.profile_id}
-    profile_names: dict[str, str] = {}
-    if profile_ids:
-        pres = await db.execute(
-            select(Profile.id, Profile.name).where(Profile.id.in_(profile_ids))
-        )
-        for pid, pname in pres.all():
-            profile_names[str(pid)] = pname
+    # Count total matching rows
+    count_query = select(func.count()).select_from(query.subquery())
+    total = (await db.execute(count_query)).scalar() or 0
+
+    # Sort
+    sort_col = _REQUEST_SORT_COLUMNS.get(sort_by, BenchmarkRequest.created_at)
+    if sort_dir == "desc":
+        query = query.order_by(sort_col.desc())
+    else:
+        query = query.order_by(sort_col.asc())
+
+    # Paginate
+    query = query.offset((page - 1) * per_page).limit(per_page)
+
+    result = await db.execute(query)
+    rows = result.scalars().all()
 
     data = []
     for r in rows:
-        pid_str = str(r.profile_id) if r.profile_id else "unknown"
-        data.append({
-            "success": r.error_type is None,
-            "profile": profile_names.get(pid_str, pid_str[:8]),
-            "turn": r.turn_number,
-            "ttft_ms": round(r.ttft_ms, 1) if r.ttft_ms is not None else None,
-            "tps": round(r.tokens_per_second, 1) if r.tokens_per_second is not None else None,
-            "output_tokens": r.output_tokens,
-            "http_status": r.http_status,
-            "error_type": r.error_type,
-        })
+        item = BenchmarkRequestRead.model_validate(r).model_dump(mode="json")
+        pid_str = str(r.profile_id) if r.profile_id else ""
+        item["profile_name"] = profile_names.get(pid_str, pid_str[:8] if pid_str else "unknown")
+        data.append(item)
+
+    return {"data": data, "meta": {"total": total, "page": page, "per_page": per_page}}
+
+
+@router.get("/{benchmark_id}/histogram")
+async def get_benchmark_histogram(
+    benchmark_id: UUID,
+    metric: str = Query("ttft_ms"),
+    bins: int = Query(30, ge=5, le=100),
+    profile_id: UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Compute a histogram of request metrics for a benchmark."""
+    await _get_benchmark_or_404(benchmark_id, db)
+
+    # Map metric name to column
+    metric_columns = {
+        "ttft_ms": BenchmarkRequest.ttft_ms,
+        "tgt_ms": BenchmarkRequest.tgt_ms,
+        "tokens_per_second": BenchmarkRequest.tokens_per_second,
+    }
+    col = metric_columns.get(metric)
+    if col is None:
+        raise HTTPException(status_code=400, detail=f"Invalid metric: {metric}")
+
+    query = (
+        select(col)
+        .where(
+            BenchmarkRequest.benchmark_id == benchmark_id,
+            col.isnot(None),
+            BenchmarkRequest.error_type.is_(None),
+        )
+    )
+    if profile_id is not None:
+        query = query.where(BenchmarkRequest.profile_id == profile_id)
+
+    result = await db.execute(query)
+    values = sorted([row[0] for row in result.all()])
+
+    if not values:
+        return {"data": HistogramResponse(bins=[], stats=HistogramStats()).model_dump()}
+
+    v_min, v_max = values[0], values[-1]
+    bin_width = (v_max - v_min) / bins if v_max > v_min else 1.0
+    if bin_width == 0:
+        bin_width = 1.0
+
+    histogram_bins: list[HistogramBin] = []
+    for i in range(bins):
+        b_min = v_min + i * bin_width
+        b_max = v_min + (i + 1) * bin_width
+        count = sum(1 for v in values if b_min <= v < b_max or (i == bins - 1 and v == b_max))
+        histogram_bins.append(HistogramBin(min=round(b_min, 2), max=round(b_max, 2), count=count))
+
+    stats = HistogramStats(
+        p50=_round(percentile(values, 50)),
+        p95=_round(percentile(values, 95)),
+        p99=_round(percentile(values, 99)),
+        mean=_round(sum(values) / len(values)),
+        min=_round(v_min),
+        max=_round(v_max),
+    )
+
+    return {"data": HistogramResponse(bins=histogram_bins, stats=stats).model_dump()}
+
+
+@router.get("/{benchmark_id}/profile-stats")
+async def get_profile_stats(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get per-profile aggregated statistics for a benchmark."""
+    benchmark = await _get_benchmark_or_404(benchmark_id, db)
+    profile_names = _profile_name_map(benchmark)
+
+    result = await db.execute(
+        select(BenchmarkRequest)
+        .where(BenchmarkRequest.benchmark_id == benchmark_id)
+    )
+    rows = result.scalars().all()
+
+    # Group by profile
+    by_profile: dict[str, list[BenchmarkRequest]] = {}
+    for r in rows:
+        pid = str(r.profile_id) if r.profile_id else "unknown"
+        by_profile.setdefault(pid, []).append(r)
+
+    data = []
+    for pid, reqs in by_profile.items():
+        ok = [r for r in reqs if r.error_type is None]
+        failed = len(reqs) - len(ok)
+
+        ttft_vals = [r.ttft_ms for r in ok if r.ttft_ms is not None]
+        tps_vals = [r.tokens_per_second for r in ok if r.tokens_per_second is not None]
+        out_tokens = [r.output_tokens for r in ok if r.output_tokens is not None]
+
+        # Quality flag counts
+        qf_counts: dict[str, int] = {}
+        for r in reqs:
+            if r.quality_flags:
+                for flag in r.quality_flags:
+                    qf_counts[flag] = qf_counts.get(flag, 0) + 1
+
+        data.append(ProfileStatsEntry(
+            profile_id=pid,
+            profile_name=profile_names.get(pid, pid[:8]),
+            total_requests=len(reqs),
+            success_count=len(ok),
+            fail_count=failed,
+            ttft_p50=_round(percentile(ttft_vals, 50)),
+            ttft_p95=_round(percentile(ttft_vals, 95)),
+            tps_p50=_round(percentile(tps_vals, 50)),
+            tps_p5=_round(percentile(tps_vals, 5)),
+            avg_output_tokens=_round(sum(out_tokens) / len(out_tokens)) if out_tokens else None,
+            quality_flag_counts=qf_counts,
+        ).model_dump())
 
     return {"data": data}
 

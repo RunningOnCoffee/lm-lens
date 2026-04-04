@@ -24,6 +24,7 @@ class LLMRequestResult:
     model_reported: str | None = None
     response_text: str = ""
     request_body: dict | None = None
+    finish_reason: str | None = None
 
 
 def _normalize_url(endpoint_url: str) -> str:
@@ -168,6 +169,7 @@ class LLMClient:
                     # Check for finish_reason with usage in final chunk
                     finish = choices[0].get("finish_reason")
                     if finish:
+                        result.finish_reason = finish
                         usage = data.get("usage")
                         if usage:
                             result.input_tokens = usage.get("prompt_tokens")
@@ -224,6 +226,7 @@ class LLMClient:
         if choices:
             message = choices[0].get("message", {})
             result.response_text = message.get("content", "")
+            result.finish_reason = choices[0].get("finish_reason")
 
         usage = data.get("usage", {})
         result.input_tokens = usage.get("prompt_tokens")

@@ -52,6 +52,7 @@ class BenchmarkRequestRead(BaseModel):
     id: UUID
     benchmark_id: UUID
     profile_id: UUID | None = None
+    profile_name: str | None = None
     session_id: UUID
     turn_number: int
     ttft_ms: float | None = None
@@ -66,9 +67,46 @@ class BenchmarkRequestRead(BaseModel):
     model_reported: str | None = None
     request_body: dict | None = None
     response_text: str | None = None
+    quality_flags: list[str] | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+# --- Histogram / Profile Stats ---
+
+class HistogramBin(BaseModel):
+    min: float
+    max: float
+    count: int
+
+
+class HistogramStats(BaseModel):
+    p50: float | None = None
+    p95: float | None = None
+    p99: float | None = None
+    mean: float | None = None
+    min: float | None = None
+    max: float | None = None
+
+
+class HistogramResponse(BaseModel):
+    bins: list[HistogramBin]
+    stats: HistogramStats
+
+
+class ProfileStatsEntry(BaseModel):
+    profile_id: str
+    profile_name: str
+    total_requests: int = 0
+    success_count: int = 0
+    fail_count: int = 0
+    ttft_p50: float | None = None
+    ttft_p95: float | None = None
+    tps_p50: float | None = None
+    tps_p5: float | None = None
+    avg_output_tokens: float | None = None
+    quality_flag_counts: dict[str, int] = {}
 
 
 # --- Benchmark Snapshot ---
