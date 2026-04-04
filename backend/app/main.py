@@ -4,7 +4,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app.database import async_session
-from app.routers import benchmarks, health, profiles, scenarios
+from app.routers import benchmarks, endpoints, health, profiles, scenarios
 from app.seed_data.runner import run_seed
 
 logging.basicConfig(level=logging.INFO)
@@ -22,7 +22,8 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="LM Lens API", version="0.1.0", lifespan=lifespan)
 
 app.include_router(health.router, prefix="/api/v1")
+app.include_router(endpoints.router, prefix="/api/v1")
+app.include_router(endpoints.endpoint_test_router, prefix="/api/v1")
 app.include_router(profiles.router, prefix="/api/v1")
 app.include_router(scenarios.router, prefix="/api/v1")
-app.include_router(scenarios.endpoint_router, prefix="/api/v1")
 app.include_router(benchmarks.router, prefix="/api/v1")

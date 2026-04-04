@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Benchmarks from './pages/Benchmarks';
 import BenchmarkRun from './pages/BenchmarkRun';
+import Endpoints from './pages/Endpoints';
+import EndpointEditor from './pages/EndpointEditor';
 import Profiles from './pages/Profiles';
 import ProfileEditor from './pages/ProfileEditor';
 import ProfileView from './pages/ProfileView';
@@ -28,6 +30,7 @@ function Sidebar() {
         <NavLink to="/" className={linkClass} end>Dashboard</NavLink>
         <NavLink to="/benchmarks" className={linkClass}>Benchmarks</NavLink>
         <NavLink to="/scenarios" className={linkClass}>Scenarios</NavLink>
+        <NavLink to="/endpoints" className={linkClass}>AI Endpoints</NavLink>
         <NavLink to="/profiles" className={linkClass}>Profiles</NavLink>
       </nav>
       <div className="p-3 border-t border-surface-600">
@@ -50,6 +53,9 @@ export default function App() {
             <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/scenarios/new" element={<ScenarioEditor />} />
             <Route path="/scenarios/:id/edit" element={<ScenarioEditor />} />
+            <Route path="/endpoints" element={<Endpoints />} />
+            <Route path="/endpoints/new" element={<EndpointEditor />} />
+            <Route path="/endpoints/:id/edit" element={<EndpointEditor />} />
             <Route path="/profiles" element={<Profiles />} />
             <Route path="/profiles/new" element={<ProfileEditor />} />
             <Route path="/profiles/:id/edit" element={<ProfileEditor />} />

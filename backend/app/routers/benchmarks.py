@@ -12,6 +12,7 @@ from app.database import async_session, get_db
 from app.engine.runner import BenchmarkRunner, get_active_runner
 from app.engine.snapshots import ws_manager
 from app.models.benchmark import Benchmark, BenchmarkRequest, BenchmarkSnapshot
+from app.models.endpoint import Endpoint
 from app.models.scenario import Scenario, ScenarioProfile
 from app.schemas.benchmark import BenchmarkCreate, BenchmarkRead, BenchmarkSnapshotRead, BenchmarkSummary
 
@@ -80,13 +81,23 @@ def _build_scenario_snapshot(scenario, scenario_profiles) -> dict:
     return {
         "scenario_id": str(scenario.id),
         "name": scenario.name,
-        "endpoint_url": scenario.endpoint_url,
-        "api_key": scenario.api_key,
-        "model_name": scenario.model_name,
         "llm_params": scenario.llm_params,
         "load_config": scenario.load_config,
         "max_concurrency": scenario.max_concurrency,
         "profiles": profiles_data,
+    }
+
+
+def _build_endpoint_snapshot(endpoint: Endpoint) -> dict:
+    """Freeze the endpoint config into a JSON-serializable dict."""
+    return {
+        "endpoint_id": str(endpoint.id),
+        "name": endpoint.name,
+        "endpoint_url": endpoint.endpoint_url,
+        "api_key": endpoint.api_key,
+        "model_name": endpoint.model_name,
+        "gpu": endpoint.gpu,
+        "inference_engine": endpoint.inference_engine,
     }
 
 
@@ -103,6 +114,14 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
         Profile,
         TemplateVariable,
     )
+
+    # Load endpoint
+    ep_result = await db.execute(
+        select(Endpoint).where(Endpoint.id == body.endpoint_id)
+    )
+    endpoint = ep_result.scalar_one_or_none()
+    if not endpoint:
+        raise HTTPException(status_code=404, detail="Endpoint not found")
 
     # Load scenario with profiles (shallow first)
     result = await db.execute(
@@ -134,14 +153,17 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
             if sp.profile.id in full_profiles:
                 sp.profile = full_profiles[sp.profile.id]
 
-    # Build frozen snapshot
+    # Build frozen snapshots
     snapshot = _build_scenario_snapshot(scenario, scenario.profiles)
+    ep_snapshot = _build_endpoint_snapshot(endpoint)
 
     # Create benchmark row
     benchmark = Benchmark(
         scenario_id=body.scenario_id,
+        endpoint_id=body.endpoint_id,
         status="pending",
         scenario_snapshot=snapshot,
+        endpoint_snapshot=ep_snapshot,
     )
     db.add(benchmark)
     await db.flush()
@@ -152,6 +174,7 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
     runner = BenchmarkRunner(
         benchmark_id=benchmark.id,
         scenario_snapshot=snapshot,
+        endpoint_snapshot=ep_snapshot,
         session_factory=async_session,
     )
     asyncio.create_task(runner.run())
@@ -160,8 +183,10 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
         "data": BenchmarkRead(
             id=benchmark.id,
             scenario_id=benchmark.scenario_id,
+            endpoint_id=benchmark.endpoint_id,
             status=benchmark.status,
             scenario_snapshot=benchmark.scenario_snapshot,
+            endpoint_snapshot=benchmark.endpoint_snapshot,
             results_summary=benchmark.results_summary,
             error_message=benchmark.error_message,
             started_at=benchmark.started_at,
@@ -169,6 +194,7 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
             created_at=benchmark.created_at,
             updated_at=benchmark.updated_at,
             scenario_name=snapshot.get("name", ""),
+            endpoint_name=ep_snapshot.get("name", ""),
         ).model_dump(mode="json")
     }
 
@@ -199,11 +225,16 @@ async def list_benchmarks(db: AsyncSession = Depends(get_db)):
         if bench.started_at and bench.completed_at:
             duration = (bench.completed_at - bench.started_at).total_seconds()
 
+        ep_snap = bench.endpoint_snapshot or {}
         items.append(
             BenchmarkSummary(
                 id=bench.id,
                 scenario_id=bench.scenario_id,
                 scenario_name=bench.scenario_snapshot.get("name", "") if bench.scenario_snapshot else "",
+                endpoint_name=ep_snap.get("name", ""),
+                model_name=ep_snap.get("model_name", ""),
+                gpu=ep_snap.get("gpu"),
+                inference_engine=ep_snap.get("inference_engine"),
                 status=bench.status,
                 total_requests=total_reqs or 0,
                 duration_seconds=duration,
@@ -219,12 +250,15 @@ async def get_benchmark(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
     """Get benchmark details including results summary."""
     benchmark = await _get_benchmark_or_404(benchmark_id, db)
 
+    ep_snap = benchmark.endpoint_snapshot or {}
     return {
         "data": BenchmarkRead(
             id=benchmark.id,
             scenario_id=benchmark.scenario_id,
+            endpoint_id=benchmark.endpoint_id,
             status=benchmark.status,
             scenario_snapshot=benchmark.scenario_snapshot,
+            endpoint_snapshot=benchmark.endpoint_snapshot,
             results_summary=benchmark.results_summary,
             error_message=benchmark.error_message,
             started_at=benchmark.started_at,
@@ -232,6 +266,7 @@ async def get_benchmark(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
             created_at=benchmark.created_at,
             updated_at=benchmark.updated_at,
             scenario_name=benchmark.scenario_snapshot.get("name", "") if benchmark.scenario_snapshot else "",
+            endpoint_name=ep_snap.get("name", ""),
         ).model_dump(mode="json")
     }
 
@@ -257,6 +292,55 @@ async def get_benchmark_snapshots(benchmark_id: UUID, db: AsyncSession = Depends
         d = BenchmarkSnapshotRead.model_validate(s).model_dump(mode="json")
         d["elapsed_seconds"] = (s.timestamp - first_ts).total_seconds()
         data.append(d)
+
+    return {"data": data}
+
+
+@router.get("/{benchmark_id}/requests")
+async def get_benchmark_requests(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get individual request log entries for a benchmark."""
+    from app.models.profile import Profile
+
+    await _get_benchmark_or_404(benchmark_id, db)
+
+    result = await db.execute(
+        select(
+            BenchmarkRequest.error_type,
+            BenchmarkRequest.profile_id,
+            BenchmarkRequest.turn_number,
+            BenchmarkRequest.ttft_ms,
+            BenchmarkRequest.tokens_per_second,
+            BenchmarkRequest.output_tokens,
+            BenchmarkRequest.http_status,
+        )
+        .where(BenchmarkRequest.benchmark_id == benchmark_id)
+        .order_by(BenchmarkRequest.created_at)
+    )
+    rows = result.all()
+
+    # Resolve profile names
+    profile_ids = {r.profile_id for r in rows if r.profile_id}
+    profile_names: dict[str, str] = {}
+    if profile_ids:
+        pres = await db.execute(
+            select(Profile.id, Profile.name).where(Profile.id.in_(profile_ids))
+        )
+        for pid, pname in pres.all():
+            profile_names[str(pid)] = pname
+
+    data = []
+    for r in rows:
+        pid_str = str(r.profile_id) if r.profile_id else "unknown"
+        data.append({
+            "success": r.error_type is None,
+            "profile": profile_names.get(pid_str, pid_str[:8]),
+            "turn": r.turn_number,
+            "ttft_ms": round(r.ttft_ms, 1) if r.ttft_ms is not None else None,
+            "tps": round(r.tokens_per_second, 1) if r.tokens_per_second is not None else None,
+            "output_tokens": r.output_tokens,
+            "http_status": r.http_status,
+            "error_type": r.error_type,
+        })
 
     return {"data": data}
 

@@ -6,6 +6,7 @@ import LatencyTimeline from '../components/charts/LatencyTimeline';
 import ThroughputChart from '../components/charts/ThroughputChart';
 import ErrorChart from '../components/charts/ErrorChart';
 import ProfileBreakdown from '../components/charts/ProfileBreakdown';
+import RequestLog from '../components/RequestLog';
 
 export default function BenchmarkRun() {
   const { id } = useParams();
@@ -17,6 +18,7 @@ export default function BenchmarkRun() {
   const isActive = benchmark?.status === 'running' || benchmark?.status === 'pending';
   const { snapshots: liveSnapshots, connected } = useWebSocket(id, { enabled: isActive });
   const [historicalSnapshots, setHistoricalSnapshots] = useState(null);
+  const [historicalRequests, setHistoricalRequests] = useState(null);
 
   // Use live snapshots during run, historical for completed
   const snapshots = isActive ? liveSnapshots : (historicalSnapshots || []);
@@ -36,7 +38,7 @@ export default function BenchmarkRun() {
     })();
   }, [id]);
 
-  // Load historical snapshots for completed benchmarks
+  // Load historical snapshots + requests for completed benchmarks
   useEffect(() => {
     if (!benchmark || isActive) return;
     (async () => {
@@ -45,6 +47,12 @@ export default function BenchmarkRun() {
         setHistoricalSnapshots(res.data);
       } catch {
         setHistoricalSnapshots([]);
+      }
+      try {
+        const res = await benchmarksApi.requests(id);
+        setHistoricalRequests(res.data);
+      } catch {
+        setHistoricalRequests([]);
       }
     })();
   }, [id, benchmark, isActive]);
@@ -121,6 +129,28 @@ export default function BenchmarkRun() {
             )}
             <span className="text-xs text-gray-600 font-mono">{id.slice(0, 8)}</span>
           </div>
+          {benchmark.endpoint_snapshot && benchmark.endpoint_snapshot.name && (
+            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
+              <span className="px-2 py-0.5 text-[11px] rounded bg-surface-700 text-gray-300">
+                {benchmark.endpoint_snapshot.name}
+              </span>
+              {benchmark.endpoint_snapshot.model_name && (
+                <span className="px-2 py-0.5 text-[11px] rounded bg-surface-700 text-gray-400 font-mono">
+                  {benchmark.endpoint_snapshot.model_name}
+                </span>
+              )}
+              {benchmark.endpoint_snapshot.gpu && (
+                <span className="px-2 py-0.5 text-[11px] rounded bg-surface-700 text-gray-500">
+                  GPU: {benchmark.endpoint_snapshot.gpu}
+                </span>
+              )}
+              {benchmark.endpoint_snapshot.inference_engine && (
+                <span className="px-2 py-0.5 text-[11px] rounded bg-surface-700 text-gray-500">
+                  {benchmark.endpoint_snapshot.inference_engine}
+                </span>
+              )}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-4">
           {isActive && hasLiveData && latest.duration_seconds > 0 && (
@@ -180,6 +210,9 @@ export default function BenchmarkRun() {
           Collecting data points for charts...
         </div>
       )}
+
+      {/* Request log — visible during and after runs */}
+      <RequestLog snapshots={snapshots} historicalRequests={historicalRequests} />
     </div>
   );
 }

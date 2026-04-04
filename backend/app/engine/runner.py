@@ -32,10 +32,12 @@ class BenchmarkRunner:
         self,
         benchmark_id: UUID,
         scenario_snapshot: dict,
+        endpoint_snapshot: dict,
         session_factory,
     ) -> None:
         self._benchmark_id = benchmark_id
         self._scenario = scenario_snapshot
+        self._endpoint = endpoint_snapshot
         self._session_factory = session_factory
         self._abort_event = asyncio.Event()
         self._user_aborted = False
@@ -67,9 +69,9 @@ class BenchmarkRunner:
 
     def _setup(self) -> None:
         self._llm_client = LLMClient(
-            endpoint_url=self._scenario["endpoint_url"],
-            api_key=self._scenario.get("api_key"),
-            model_name=self._scenario["model_name"],
+            endpoint_url=self._endpoint["endpoint_url"],
+            api_key=self._endpoint.get("api_key"),
+            model_name=self._endpoint["model_name"],
             llm_params=self._scenario.get("llm_params", {}),
             stream=True,
         )
@@ -130,7 +132,7 @@ class BenchmarkRunner:
             pass  # Normal: duration elapsed
 
         self._abort_event.set()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await self._cancel_tasks(tasks)
 
     async def _run_ramp(self, config: dict) -> None:
         """Add users in steps over time. Each user loops sessions until duration ends."""
@@ -165,7 +167,7 @@ class BenchmarkRunner:
                 pass
 
         self._abort_event.set()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await self._cancel_tasks(tasks)
 
     async def _run_breaking_point(self, config: dict) -> None:
         """Ramp until breaking criteria are breached for 3 consecutive snapshots."""
@@ -210,7 +212,7 @@ class BenchmarkRunner:
                 breach_count = 0
 
         self._abort_event.set()
-        await asyncio.gather(*tasks, return_exceptions=True)
+        await self._cancel_tasks(tasks)
 
     async def _check_breaking(
         self, max_ttft: float, max_itl: float, max_error_rate: float
@@ -326,6 +328,17 @@ class BenchmarkRunner:
     def abort(self) -> None:
         self._user_aborted = True
         self._abort_event.set()
+
+    @staticmethod
+    async def _cancel_tasks(tasks: list[asyncio.Task], grace_seconds: float = 3.0) -> None:
+        """Wait briefly for tasks to finish, then cancel any still running."""
+        if not tasks:
+            return
+        done, pending = await asyncio.wait(tasks, timeout=grace_seconds)
+        for task in pending:
+            task.cancel()
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
 
     async def _update_status(self, status: str, error: str | None = None) -> None:
         async with self._session_factory() as session:
@@ -444,9 +457,10 @@ class BenchmarkRunner:
             return {"error": "Failed to compute summary"}
 
 
-def _round(value: float | None) -> float | None:
-    return round(value, 2) if value is not None else None
-
     async def _cleanup(self) -> None:
         if self._llm_client:
             await self._llm_client.close()
+
+
+def _round(value: float | None) -> float | None:
+    return round(value, 2) if value is not None else None

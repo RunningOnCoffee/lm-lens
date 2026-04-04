@@ -145,9 +145,18 @@ lm-lens/
 
 ## API Endpoints
 ```
-POST   /api/v1/benchmarks              — Start a new benchmark run
+GET    /api/v1/endpoints               — List all endpoints
+POST   /api/v1/endpoints               — Create endpoint
+GET    /api/v1/endpoints/{id}          — Get endpoint details
+PUT    /api/v1/endpoints/{id}          — Update endpoint
+DELETE /api/v1/endpoints/{id}          — Delete endpoint
+POST   /api/v1/endpoints/{id}/clone    — Clone an endpoint
+POST   /api/v1/endpoint/test           — Test LLM endpoint connectivity
+
+POST   /api/v1/benchmarks              — Start a new benchmark run (scenario_id + endpoint_id)
 GET    /api/v1/benchmarks              — List all runs
 GET    /api/v1/benchmarks/{id}         — Get run details + results
+GET    /api/v1/benchmarks/{id}/requests — Get individual request log entries
 DELETE /api/v1/benchmarks/{id}         — Delete a run
 POST   /api/v1/benchmarks/{id}/abort   — Abort a running benchmark
 WS     /api/v1/benchmarks/{id}/live    — WebSocket for live metrics
@@ -167,7 +176,6 @@ DELETE /api/v1/scenarios/{id}          — Delete scenario
 POST   /api/v1/scenarios/{id}/clone    — Clone a scenario
 
 GET    /api/v1/health                  — Health check
-POST   /api/v1/endpoint/test           — Test LLM endpoint connectivity
 GET    /api/v1/export/{benchmark_id}   — Export results as CSV/JSON
 ```
 

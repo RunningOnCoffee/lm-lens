@@ -1,8 +1,6 @@
 import re
-import time
 from uuid import UUID
 
-import httpx
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,8 +9,6 @@ from sqlalchemy.orm import selectinload
 from app.database import get_db
 from app.models import Scenario, ScenarioProfile
 from app.schemas.scenario import (
-    EndpointTestRequest,
-    EndpointTestResponse,
     ScenarioCreate,
     ScenarioProfileRead,
     ScenarioRead,
@@ -21,7 +17,6 @@ from app.schemas.scenario import (
 )
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
-endpoint_router = APIRouter(prefix="/endpoint", tags=["endpoint"])
 
 
 # ---------------------------------------------------------------------------
@@ -112,8 +107,6 @@ async def list_scenarios(db: AsyncSession = Depends(get_db)) -> dict:
             id=s.id,
             name=s.name,
             description=s.description,
-            endpoint_url=s.endpoint_url,
-            model_name=s.model_name,
             profile_count=pc or 0,
             total_users=tu or 0,
             duration_seconds=(s.load_config or {}).get("duration_seconds", 0),
@@ -147,9 +140,6 @@ async def create_scenario(
     scenario = Scenario(
         name=body.name,
         description=body.description,
-        endpoint_url=body.endpoint_url,
-        api_key=body.api_key,
-        model_name=body.model_name,
         llm_params=body.llm_params.model_dump(),
         load_config=body.load_config.model_dump(),
         max_concurrency=body.max_concurrency,
@@ -193,12 +183,6 @@ async def update_scenario(
         scenario.name = body.name
     if body.description is not None:
         scenario.description = body.description
-    if body.endpoint_url is not None:
-        scenario.endpoint_url = body.endpoint_url
-    if body.api_key is not None:
-        scenario.api_key = body.api_key
-    if body.model_name is not None:
-        scenario.model_name = body.model_name
     if body.llm_params is not None:
         scenario.llm_params = body.llm_params.model_dump()
     if body.load_config is not None:
@@ -261,9 +245,6 @@ async def clone_scenario(
     clone = Scenario(
         name=clone_name,
         description=source.description,
-        endpoint_url=source.endpoint_url,
-        api_key=source.api_key,
-        model_name=source.model_name,
         llm_params=dict(source.llm_params),
         load_config=dict(source.load_config),
         max_concurrency=source.max_concurrency,
@@ -287,74 +268,3 @@ async def clone_scenario(
 
     clone = await _get_scenario_or_404(clone.id, db, eager=True)
     return {"data": _build_scenario_read(clone)}
-
-
-# ---------------------------------------------------------------------------
-# Endpoint Test (separate router, mounted at /api/v1/endpoint)
-# ---------------------------------------------------------------------------
-
-@endpoint_router.post("/test", response_model=dict)
-async def test_endpoint(body: EndpointTestRequest) -> dict:
-    """Send a minimal chat completion request to test connectivity."""
-    url = body.endpoint_url.rstrip("/")
-    if not url.endswith("/chat/completions"):
-        if not url.endswith("/v1"):
-            url += "/v1"
-        url += "/chat/completions"
-
-    headers = {"Content-Type": "application/json"}
-    if body.api_key:
-        headers["Authorization"] = f"Bearer {body.api_key}"
-
-    payload = {
-        "model": body.model_name,
-        "messages": [{"role": "user", "content": "Say hello."}],
-        "max_tokens": 5,
-    }
-
-    try:
-        start = time.perf_counter()
-        async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as client:
-            resp = await client.post(url, json=payload, headers=headers)
-        latency_ms = (time.perf_counter() - start) * 1000
-
-        if resp.status_code >= 400:
-            return {
-                "data": EndpointTestResponse(
-                    success=False,
-                    latency_ms=latency_ms,
-                    error=f"HTTP {resp.status_code}: {resp.text[:200]}",
-                ).model_dump()
-            }
-
-        data = resp.json()
-        model_reported = data.get("model")
-
-        return {
-            "data": EndpointTestResponse(
-                success=True,
-                latency_ms=round(latency_ms, 1),
-                model_reported=model_reported,
-            ).model_dump()
-        }
-    except httpx.TimeoutException:
-        return {
-            "data": EndpointTestResponse(
-                success=False,
-                error="Connection timed out after 30s",
-            ).model_dump()
-        }
-    except httpx.ConnectError as e:
-        return {
-            "data": EndpointTestResponse(
-                success=False,
-                error=f"Connection failed: {e}",
-            ).model_dump()
-        }
-    except Exception as e:
-        return {
-            "data": EndpointTestResponse(
-                success=False,
-                error=f"Unexpected error: {e}",
-            ).model_dump()
-        }

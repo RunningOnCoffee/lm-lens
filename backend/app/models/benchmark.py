@@ -15,8 +15,12 @@ class Benchmark(Base):
     scenario_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("scenarios.id", ondelete="CASCADE"), nullable=False
     )
+    endpoint_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("endpoints.id", ondelete="SET NULL"), nullable=True
+    )
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     scenario_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    endpoint_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     results_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

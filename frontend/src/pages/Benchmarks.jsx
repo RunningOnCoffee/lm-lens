@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useBenchmarkStore from '../stores/benchmarkStore';
 import useScenarioStore from '../stores/scenarioStore';
+import useEndpointStore from '../stores/endpointStore';
 
 const STATUS_STYLES = {
   pending:   'bg-gray-500/20 text-gray-400',
@@ -22,13 +23,15 @@ function StatusBadge({ status }) {
 export default function Benchmarks() {
   const { benchmarks, loading, error, fetchBenchmarks, startBenchmark, deleteBenchmark, abortBenchmark } = useBenchmarkStore();
   const { scenarios, fetchScenarios } = useScenarioStore();
+  const { endpoints, fetchEndpoints } = useEndpointStore();
   const navigate = useNavigate();
 
   const [selectedScenario, setSelectedScenario] = useState('');
+  const [selectedEndpoint, setSelectedEndpoint] = useState('');
   const [starting, setStarting] = useState(false);
   const [actionError, setActionError] = useState(null);
 
-  useEffect(() => { fetchBenchmarks(); fetchScenarios(); }, [fetchBenchmarks, fetchScenarios]);
+  useEffect(() => { fetchBenchmarks(); fetchScenarios(); fetchEndpoints(); }, [fetchBenchmarks, fetchScenarios, fetchEndpoints]);
 
   // Poll for status updates every 3s
   useEffect(() => {
@@ -39,11 +42,11 @@ export default function Benchmarks() {
   }, [benchmarks, fetchBenchmarks]);
 
   const handleStart = async () => {
-    if (!selectedScenario) return;
+    if (!selectedScenario || !selectedEndpoint) return;
     setStarting(true);
     setActionError(null);
     try {
-      const benchmark = await startBenchmark(selectedScenario);
+      const benchmark = await startBenchmark(selectedScenario, selectedEndpoint);
       navigate(`/benchmarks/${benchmark.id}`);
     } catch (err) {
       setActionError(err.message);
@@ -91,7 +94,7 @@ export default function Benchmarks() {
     );
   }
 
-  const cols = 'grid-cols-[1fr_120px_100px_80px_100px_160px]';
+  const cols = 'grid-cols-[1fr_140px_120px_100px_80px_100px_160px]';
 
   return (
     <div>
@@ -113,14 +116,29 @@ export default function Benchmarks() {
               <option value="">Select a scenario...</option>
               {scenarios.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.name} — {s.model_name} ({s.total_users} users, {s.test_mode})
+                  {s.name} ({s.total_users} users, {s.test_mode})
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex-1">
+            <label className="block text-xs text-gray-500 mb-1">AI Endpoint</label>
+            <select
+              value={selectedEndpoint}
+              onChange={(e) => setSelectedEndpoint(e.target.value)}
+              className="input w-full"
+            >
+              <option value="">Select an endpoint...</option>
+              {endpoints.map((ep) => (
+                <option key={ep.id} value={ep.id}>
+                  {ep.name} — {ep.model_name}{ep.gpu ? ` (${ep.gpu})` : ''}
                 </option>
               ))}
             </select>
           </div>
           <button
             onClick={handleStart}
-            disabled={!selectedScenario || starting}
+            disabled={!selectedScenario || !selectedEndpoint || starting}
             className="px-5 py-2 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
           >
             {starting ? 'Starting...' : 'Run Benchmark'}
@@ -138,6 +156,7 @@ export default function Benchmarks() {
       <div className="bg-surface-800 border border-surface-600 rounded-xl overflow-hidden">
         <div className={`grid ${cols} items-center px-4 py-2.5 border-b border-surface-600`}>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Scenario</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Endpoint</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Status</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Requests</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Duration</span>
@@ -160,7 +179,7 @@ export default function Benchmarks() {
 
         {benchmarks.length === 0 && (
           <div className="px-4 py-8 text-center text-gray-600 text-sm">
-            No benchmarks yet. Select a scenario and click Run Benchmark to start one.
+            No benchmarks yet. Select a scenario and endpoint, then click Run Benchmark.
           </div>
         )}
       </div>
@@ -179,6 +198,12 @@ function BenchmarkRow({ benchmark, cols, formatDuration, formatTime, onView, onA
           {benchmark.scenario_name || 'Unknown Scenario'}
         </span>
         <span className="text-[10px] text-gray-600 font-mono">{benchmark.id.slice(0, 8)}</span>
+      </div>
+      <div className="min-w-0 text-center">
+        <span className="text-xs text-gray-300 truncate block">{benchmark.endpoint_name || '-'}</span>
+        {benchmark.model_name && (
+          <span className="text-[10px] text-gray-600 truncate block">{benchmark.model_name}</span>
+        )}
       </div>
       <div className="flex justify-center">
         <StatusBadge status={benchmark.status} />

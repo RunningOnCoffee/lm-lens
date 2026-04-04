@@ -102,7 +102,7 @@ export default function Scenarios() {
     );
   }
 
-  const cols = 'grid-cols-[40px_1fr_80px_120px_80px_80px_80px_160px]';
+  const cols = 'grid-cols-[40px_1fr_80px_80px_80px_80px_160px]';
 
   return (
     <div>
@@ -168,7 +168,6 @@ export default function Scenarios() {
           </div>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Name</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Profiles</span>
-          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Model</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Users</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Mode</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Duration</span>
@@ -220,7 +219,6 @@ function ScenarioRow({ scenario, cols, isSelected, onToggle, formatDuration, onC
         <p className="text-xs text-gray-600 truncate mt-0.5">{scenario.description}</p>
       </div>
       <span className="text-xs text-gray-400 text-center tabular-nums">{scenario.profile_count}</span>
-      <span className="text-xs text-gray-400 text-center truncate" title={scenario.model_name}>{scenario.model_name}</span>
       <span className="text-xs text-gray-400 text-center tabular-nums">{scenario.total_users}</span>
       <span className="text-xs text-gray-400 text-center">{MODE_LABELS[scenario.test_mode] || scenario.test_mode}</span>
       <span className="text-xs text-gray-400 text-center tabular-nums">{formatDuration(scenario.duration_seconds)}</span>

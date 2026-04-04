@@ -16,8 +16,8 @@ const useBenchmarkStore = create((set, get) => ({
     }
   },
 
-  startBenchmark: async (scenarioId) => {
-    const res = await benchmarksApi.start(scenarioId);
+  startBenchmark: async (scenarioId, endpointId) => {
+    const res = await benchmarksApi.start(scenarioId, endpointId);
     await get().fetchBenchmarks();
     return res.data;
   },

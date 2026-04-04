@@ -96,7 +96,7 @@ class SnapshotGenerator:
             pass
 
     async def _generate(self) -> None:
-        results, profile_ids = await self._collector.take_window()
+        results, profile_ids, turn_numbers = await self._collector.take_window()
 
         snapshot = self._compute(results, profile_ids)
 
@@ -118,6 +118,21 @@ class SnapshotGenerator:
         elapsed = 0.0
         if self.started_at:
             elapsed = (datetime.now(timezone.utc) - self.started_at).total_seconds()
+
+        # Build recent requests feed (up to 20 per snapshot)
+        recent_requests = []
+        for r, pid, turn in zip(results[-20:], profile_ids[-20:], turn_numbers[-20:]):
+            pid_str = str(pid) if pid else "unknown"
+            recent_requests.append({
+                "success": r.success,
+                "profile": self._profile_names.get(pid_str, pid_str[:8]),
+                "turn": turn,
+                "ttft_ms": round(r.ttft_ms, 1) if r.ttft_ms is not None else None,
+                "tps": round(r.tokens_per_second, 1) if r.tokens_per_second is not None else None,
+                "output_tokens": r.output_tokens,
+                "http_status": r.http_status,
+                "error_type": r.error_type,
+            })
 
         # Broadcast via WebSocket
         snapshot_data = {
@@ -149,6 +164,8 @@ class SnapshotGenerator:
             # Timing
             "elapsed_seconds": elapsed,
             "duration_seconds": self.duration_seconds,
+            # Recent individual requests for live log
+            "recent_requests": recent_requests,
         }
         await ws_manager.broadcast(self._benchmark_id, snapshot_data)
 

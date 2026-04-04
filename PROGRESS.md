@@ -75,7 +75,19 @@
 - [x] Error rate chart (errors over time, green "no errors" state)
 - [x] Countdown timer + progress bar during active runs
 - [x] Status badges, abort button, live indicator
-- [ ] Auto-scroll request log
+- [x] Auto-scroll request log
+
+## Phase 6.5: AI Endpoints Refactor
+- [x] New `endpoints` table (name, URL, API key, model, GPU, inference engine, notes)
+- [x] Endpoint model, schemas, Alembic migration 005
+- [x] Endpoints CRUD router (list, get, create, update, delete, clone, test connection)
+- [x] Remove endpoint fields from scenarios (model, schema, router, frontend)
+- [x] Benchmark creation takes scenario_id + endpoint_id, stores endpoint_snapshot
+- [x] BenchmarkRunner reads endpoint config from endpoint_snapshot
+- [x] Frontend: AI Endpoints sidebar tab + list page + editor page
+- [x] Frontend: Endpoint picker on benchmark start (scenario + endpoint dropdowns)
+- [x] Frontend: Endpoint info badges on benchmark run page (name, model, GPU, engine)
+- [x] Frontend: Endpoint name/model shown in benchmark list
 
 ## Phase 7: Results & Response Browser
 - [ ] Frontend: Results summary page (post-run analysis)

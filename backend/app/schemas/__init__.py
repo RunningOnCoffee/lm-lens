@@ -1,3 +1,11 @@
+from app.schemas.endpoint import (
+    EndpointCreate,
+    EndpointRead,
+    EndpointSummary,
+    EndpointTestRequest,
+    EndpointTestResponse,
+    EndpointUpdate,
+)
 from app.schemas.profile import (
     BehaviorConfig,
     CodeSnippetCreate,
@@ -15,8 +23,6 @@ from app.schemas.profile import (
 )
 from app.schemas.scenario import (
     BreakingCriteria,
-    EndpointTestRequest,
-    EndpointTestResponse,
     LLMParams,
     LoadConfig,
     ScenarioCreate,
@@ -34,8 +40,12 @@ __all__ = [
     "CodeSnippetRead",
     "ConversationTemplateCreate",
     "ConversationTemplateRead",
+    "EndpointCreate",
+    "EndpointRead",
+    "EndpointSummary",
     "EndpointTestRequest",
     "EndpointTestResponse",
+    "EndpointUpdate",
     "FollowUpPromptCreate",
     "FollowUpPromptRead",
     "LLMParams",

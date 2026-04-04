@@ -38,15 +38,26 @@ export const scenariosApi = {
   update: (id, body) => api.put(`/scenarios/${id}`, body),
   delete: (id) => api.del(`/scenarios/${id}`),
   clone: (id) => api.post(`/scenarios/${id}/clone`),
-  testEndpoint: (body) => api.post('/endpoint/test', body),
+};
+
+// Endpoints API
+export const endpointsApi = {
+  list: () => api.get('/endpoints'),
+  get: (id) => api.get(`/endpoints/${id}`),
+  create: (body) => api.post('/endpoints', body),
+  update: (id, body) => api.put(`/endpoints/${id}`, body),
+  delete: (id) => api.del(`/endpoints/${id}`),
+  clone: (id) => api.post(`/endpoints/${id}/clone`),
+  testConnection: (body) => api.post('/endpoint/test', body),
 };
 
 // Benchmarks API
 export const benchmarksApi = {
   list: () => api.get('/benchmarks'),
   get: (id) => api.get(`/benchmarks/${id}`),
-  start: (scenarioId) => api.post('/benchmarks', { scenario_id: scenarioId }),
+  start: (scenarioId, endpointId) => api.post('/benchmarks', { scenario_id: scenarioId, endpoint_id: endpointId }),
   delete: (id) => api.del(`/benchmarks/${id}`),
   abort: (id) => api.post(`/benchmarks/${id}/abort`),
   snapshots: (id) => api.get(`/benchmarks/${id}/snapshots`),
+  requests: (id) => api.get(`/benchmarks/${id}/requests`),
 };

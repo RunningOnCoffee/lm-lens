@@ -66,10 +66,6 @@ export default function ScenarioEditor() {
   // Form state
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
-  const [endpointUrl, setEndpointUrl] = useState('');
-  const [apiKey, setApiKey] = useState('');
-  const [showApiKey, setShowApiKey] = useState(false);
-  const [modelName, setModelName] = useState('');
   const [llmParams, setLlmParams] = useState(DEFAULT_LLM_PARAMS);
   const [maxTokensInput, setMaxTokensInput] = useState('');
   const [loadConfig, setLoadConfig] = useState(DEFAULT_LOAD_CONFIG);
@@ -81,8 +77,6 @@ export default function ScenarioEditor() {
   const [saveState, setSaveState] = useState('idle'); // idle | saving | saved
   const [error, setError] = useState(null);
   const [availableProfiles, setAvailableProfiles] = useState([]);
-  const [testResult, setTestResult] = useState(null);
-  const [testing, setTesting] = useState(false);
 
   // Load available profiles
   useEffect(() => {
@@ -98,9 +92,6 @@ export default function ScenarioEditor() {
       const s = res.data;
       setName(s.name);
       setDescription(s.description);
-      setEndpointUrl(s.endpoint_url);
-      setApiKey(s.api_key || '');
-      setModelName(s.model_name);
       setLlmParams(s.llm_params);
       setMaxTokensInput(s.llm_params.max_tokens != null ? String(s.llm_params.max_tokens) : '');
       setLoadConfig(s.load_config);
@@ -165,24 +156,6 @@ export default function ScenarioEditor() {
     setLlmParams({ ...llmParams, max_tokens: val === '' ? null : (isNaN(num) ? null : num) });
   };
 
-  // --- Test endpoint ---
-  const handleTestEndpoint = async () => {
-    setTesting(true);
-    setTestResult(null);
-    try {
-      const res = await scenariosApi.testEndpoint({
-        endpoint_url: endpointUrl,
-        api_key: apiKey || null,
-        model_name: modelName,
-      });
-      setTestResult(res.data);
-    } catch (err) {
-      setTestResult({ success: false, error: err.message });
-    } finally {
-      setTesting(false);
-    }
-  };
-
   // --- Save ---
   const handleSave = async () => {
     setSaveState('saving');
@@ -198,9 +171,6 @@ export default function ScenarioEditor() {
       const body = {
         name,
         description,
-        endpoint_url: endpointUrl,
-        api_key: apiKey || null,
-        model_name: modelName,
         llm_params: {
           ...llmParams,
           stop: llmParams.stop.filter(Boolean),
@@ -240,7 +210,7 @@ export default function ScenarioEditor() {
     return `${seconds}s`;
   };
 
-  const canSave = name.trim() && endpointUrl.trim() && modelName.trim();
+  const canSave = !!name.trim();
 
   // Profiles not yet added
   const unaddedProfiles = availableProfiles.filter(
@@ -293,66 +263,6 @@ export default function ScenarioEditor() {
               className="input"
             />
           </Field>
-        </div>
-      </Section>
-
-      {/* Endpoint Configuration */}
-      <Section title="Endpoint Configuration" subtitle="Works with any OpenAI-compatible API — llama.cpp, vLLM, Ollama, LM Studio, OpenAI, etc.">
-        <div className="grid grid-cols-1 gap-4">
-          <div className="grid grid-cols-2 gap-4">
-            <Field label="Endpoint URL" tooltip="Base URL of the OpenAI-compatible API. For local LLMs, this is typically http://localhost:PORT. The /v1/chat/completions path is appended automatically if needed.">
-              <input
-                type="text"
-                value={endpointUrl}
-                onChange={(e) => setEndpointUrl(e.target.value)}
-                placeholder="http://localhost:8081/v1"
-                className="input"
-              />
-            </Field>
-            <Field label="Model Name" tooltip="The model identifier to send in API requests. For local LLMs, check your server's model list. For OpenAI, use names like gpt-4o or gpt-3.5-turbo.">
-              <input
-                type="text"
-                value={modelName}
-                onChange={(e) => setModelName(e.target.value)}
-                placeholder="gpt-3.5-turbo"
-                className="input"
-              />
-            </Field>
-          </div>
-          <Field label="API Key" tooltip="Authentication key for the LLM endpoint. Leave empty for local servers that don't require authentication.">
-            <div className="flex gap-2">
-              <input
-                type={showApiKey ? 'text' : 'password'}
-                value={apiKey}
-                onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Optional — leave blank for local LLMs"
-                className="input flex-1"
-              />
-              <button
-                type="button"
-                onClick={() => setShowApiKey(!showApiKey)}
-                className="px-3 py-1.5 text-xs rounded bg-surface-700 text-gray-400 hover:text-gray-200 hover:bg-surface-600 transition-colors"
-              >
-                {showApiKey ? 'Hide' : 'Show'}
-              </button>
-            </div>
-          </Field>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={handleTestEndpoint}
-              disabled={testing || !endpointUrl.trim() || !modelName.trim()}
-              className="px-4 py-2 text-sm rounded-lg bg-surface-700 text-gray-300 hover:bg-surface-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {testing ? 'Testing...' : 'Test Connection'}
-            </button>
-            {testResult && (
-              <span className={`text-sm ${testResult.success ? 'text-green-400' : 'text-danger'}`}>
-                {testResult.success
-                  ? `Connected (${testResult.latency_ms}ms${testResult.model_reported ? `, model: ${testResult.model_reported}` : ''})`
-                  : testResult.error}
-              </span>
-            )}
-          </div>
         </div>
       </Section>
 

@@ -15,9 +15,6 @@ class Scenario(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
-    endpoint_url: Mapped[str] = mapped_column(String(512), nullable=False)
-    api_key: Mapped[str | None] = mapped_column(String(512), nullable=True)
-    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
     llm_params: Mapped[dict] = mapped_column(
         JSONB, nullable=False, default=lambda: {
             "max_tokens": None,

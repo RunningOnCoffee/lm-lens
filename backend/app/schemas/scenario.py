@@ -62,9 +62,6 @@ class ScenarioProfileRead(ScenarioProfileBase):
 class ScenarioBase(BaseModel):
     name: str
     description: str = ""
-    endpoint_url: str
-    api_key: str | None = None
-    model_name: str
     llm_params: LLMParams = Field(default_factory=LLMParams)
     load_config: LoadConfig = Field(default_factory=LoadConfig)
     max_concurrency: int = Field(100, ge=1, le=10000)
@@ -77,9 +74,6 @@ class ScenarioCreate(ScenarioBase):
 class ScenarioUpdate(BaseModel):
     name: str | None = None
     description: str | None = None
-    endpoint_url: str | None = None
-    api_key: str | None = None
-    model_name: str | None = None
     llm_params: LLMParams | None = None
     load_config: LoadConfig | None = None
     max_concurrency: int | None = Field(None, ge=1, le=10000)
@@ -99,8 +93,6 @@ class ScenarioSummary(BaseModel):
     id: UUID
     name: str
     description: str
-    endpoint_url: str
-    model_name: str
     profile_count: int = 0
     total_users: int = 0
     duration_seconds: int = 0
@@ -108,18 +100,3 @@ class ScenarioSummary(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
-
-
-# --- Endpoint test ---
-
-class EndpointTestRequest(BaseModel):
-    endpoint_url: str
-    api_key: str | None = None
-    model_name: str
-
-
-class EndpointTestResponse(BaseModel):
-    success: bool
-    latency_ms: float | None = None
-    error: str | None = None
-    model_reported: str | None = None

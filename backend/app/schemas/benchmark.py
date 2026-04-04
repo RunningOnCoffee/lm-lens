@@ -8,13 +8,16 @@ from pydantic import BaseModel, Field
 
 class BenchmarkCreate(BaseModel):
     scenario_id: UUID
+    endpoint_id: UUID
 
 
 class BenchmarkRead(BaseModel):
     id: UUID
     scenario_id: UUID
+    endpoint_id: UUID | None = None
     status: str
     scenario_snapshot: dict = {}
+    endpoint_snapshot: dict = {}
     results_summary: dict | None = None
     error_message: str | None = None
     started_at: datetime | None = None
@@ -22,6 +25,7 @@ class BenchmarkRead(BaseModel):
     created_at: datetime
     updated_at: datetime
     scenario_name: str = ""
+    endpoint_name: str = ""
 
     model_config = {"from_attributes": True}
 
@@ -30,6 +34,10 @@ class BenchmarkSummary(BaseModel):
     id: UUID
     scenario_id: UUID
     scenario_name: str = ""
+    endpoint_name: str = ""
+    model_name: str = ""
+    gpu: str | None = None
+    inference_engine: str | None = None
     status: str
     total_requests: int = 0
     duration_seconds: float | None = None

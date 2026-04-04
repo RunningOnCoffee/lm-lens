@@ -27,6 +27,7 @@ class MetricCollector:
         # In-memory window for snapshot generator (drained every 1s)
         self._window: list[LLMRequestResult] = []
         self._window_profiles: list[UUID | None] = []
+        self._window_turns: list[int] = []
         self._window_lock = asyncio.Lock()
         self._total_completed = 0
         self._total_failed = 0
@@ -74,6 +75,7 @@ class MetricCollector:
         async with self._window_lock:
             self._window.append(result)
             self._window_profiles.append(profile_id)
+            self._window_turns.append(turn_number)
             self._rolling_staging.append((result, turn_number))
             if result.success:
                 self._total_completed += 1
@@ -108,13 +110,15 @@ class MetricCollector:
         except Exception:
             logger.exception("Failed to flush %d metric records", len(batch))
 
-    async def take_window(self) -> tuple[list[LLMRequestResult], list[UUID | None]]:
-        """Atomically swap the in-memory window and return results + profile IDs."""
+    async def take_window(self) -> tuple[list[LLMRequestResult], list[UUID | None], list[int]]:
+        """Atomically swap the in-memory window and return results + profile IDs + turn numbers."""
         async with self._window_lock:
             results = self._window
             profiles = self._window_profiles
+            turns = self._window_turns
             self._window = []
             self._window_profiles = []
+            self._window_turns = []
             # Push this second's results into the rolling deque
             if self._rolling_staging:
                 self._rolling_deque.append(self._rolling_staging)
@@ -122,7 +126,7 @@ class MetricCollector:
             else:
                 # Still push an empty batch so the deque advances each second
                 self._rolling_deque.append([])
-            return results, profiles
+            return results, profiles, turns
 
     @property
     def total_completed(self) -> int:
