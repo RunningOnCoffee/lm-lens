@@ -3,6 +3,7 @@ import {
   CartesianGrid, Tooltip,
 } from 'recharts';
 import { COLORS, AXIS_STYLE, GRID_STYLE, TOOLTIP_STYLE } from './ChartTheme';
+import InfoTip from '../InfoTip';
 
 function formatElapsed(seconds) {
   if (seconds == null) return '';
@@ -26,8 +27,9 @@ export default function ErrorChart({ snapshots }) {
 
   return (
     <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 inline-flex items-center gap-1.5">
         Errors Over Time
+        <InfoTip text="Number of failed requests per second. Errors include timeouts, HTTP errors, and connection failures. A clean run shows 'No errors recorded'." />
       </h3>
       {!hasErrors ? (
         <div className="flex items-center justify-center h-[240px] text-sm text-green-400/60">

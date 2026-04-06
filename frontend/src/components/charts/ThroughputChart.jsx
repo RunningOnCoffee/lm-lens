@@ -3,6 +3,7 @@ import {
   CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { COLORS, AXIS_STYLE, GRID_STYLE, TOOLTIP_STYLE } from './ChartTheme';
+import InfoTip from '../InfoTip';
 
 function formatElapsed(seconds) {
   if (seconds == null) return '';
@@ -20,8 +21,9 @@ export default function ThroughputChart({ snapshots }) {
 
   return (
     <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 inline-flex items-center gap-1.5">
         Throughput Over Time
+        <InfoTip text="Tokens per second (generation speed) and requests per second over time. Higher throughput means the endpoint is handling more work." />
       </h3>
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>

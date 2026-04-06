@@ -9,11 +9,19 @@ export default function RequestLog({ snapshots, historicalRequests }) {
   const lastCountRef = useRef(0);
 
   // Load historical requests when available (completed benchmarks)
+  // Normalize from BenchmarkRequestRead format to the simplified format used by RequestRow
   useEffect(() => {
     if (!historicalRequests || historicalRequests.length === 0) return;
     setEntries(
       historicalRequests.map((req, i) => ({
-        ...req,
+        success: req.success !== undefined ? req.success : req.error_type == null,
+        profile: req.profile || req.profile_name || 'unknown',
+        turn: req.turn !== undefined ? req.turn : req.turn_number ?? 0,
+        ttft_ms: req.ttft_ms != null ? Math.round(req.ttft_ms * 10) / 10 : null,
+        tps: req.tps !== undefined ? req.tps : (req.tokens_per_second != null ? Math.round(req.tokens_per_second * 10) / 10 : null),
+        output_tokens: req.output_tokens,
+        http_status: req.http_status,
+        error_type: req.error_type,
         key: `hist-${i}`,
       }))
     );

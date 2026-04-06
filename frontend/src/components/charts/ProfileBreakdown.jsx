@@ -4,6 +4,7 @@ import {
 } from 'recharts';
 import { useMemo } from 'react';
 import { COLORS, AXIS_STYLE, GRID_STYLE, TOOLTIP_STYLE } from './ChartTheme';
+import InfoTip from '../InfoTip';
 
 export default function ProfileBreakdown({ snapshots }) {
   // Aggregate per_profile across recent snapshots for stability
@@ -38,8 +39,9 @@ export default function ProfileBreakdown({ snapshots }) {
   if (data.length === 0) {
     return (
       <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-        <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+        <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 inline-flex items-center gap-1.5">
           Per-Profile Breakdown
+          <InfoTip text="Compares latency and generation speed across different user profiles. Each profile simulates a different type of user (e.g. casual, programmer, analyst)." />
         </h3>
         <div className="flex items-center justify-center h-[200px] text-sm text-gray-600">
           Waiting for per-profile data...
@@ -50,8 +52,9 @@ export default function ProfileBreakdown({ snapshots }) {
 
   return (
     <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 inline-flex items-center gap-1.5">
         Per-Profile Performance
+        <InfoTip text="Compares latency and generation speed across different user profiles. Bars show median TTFT (Time to First Token), lines show average tokens per second." />
       </h3>
       <ResponsiveContainer width="100%" height={200}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>

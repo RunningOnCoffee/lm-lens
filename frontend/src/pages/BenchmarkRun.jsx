@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { benchmarksApi } from '../api/client';
 import useWebSocket from '../hooks/useWebSocket';
+import TabBar from '../components/TabBar';
+import AnalysisTab from '../components/AnalysisTab';
+import InfoTip from '../components/InfoTip';
 import LatencyTimeline from '../components/charts/LatencyTimeline';
 import ThroughputChart from '../components/charts/ThroughputChart';
 import ErrorChart from '../components/charts/ErrorChart';
@@ -19,6 +22,8 @@ export default function BenchmarkRun() {
   const { snapshots: liveSnapshots, connected } = useWebSocket(id, { enabled: isActive });
   const [historicalSnapshots, setHistoricalSnapshots] = useState(null);
   const [historicalRequests, setHistoricalRequests] = useState(null);
+  const [activeTab, setActiveTab] = useState('overview');
+  const [aborting, setAborting] = useState(false);
 
   // Use live snapshots during run, historical for completed
   const snapshots = isActive ? liveSnapshots : (historicalSnapshots || []);
@@ -49,7 +54,7 @@ export default function BenchmarkRun() {
         setHistoricalSnapshots([]);
       }
       try {
-        const res = await benchmarksApi.requests(id);
+        const res = await benchmarksApi.requests(id, { per_page: 200 });
         setHistoricalRequests(res.data);
       } catch {
         setHistoricalRequests([]);
@@ -76,6 +81,7 @@ export default function BenchmarkRun() {
   }, [id, isActive]);
 
   const handleAbort = async () => {
+    setAborting(true);
     try {
       await benchmarksApi.abort(id);
       const res = await benchmarksApi.get(id);
@@ -162,57 +168,99 @@ export default function BenchmarkRun() {
           {isActive && (
             <button
               onClick={handleAbort}
-              className="px-4 py-2 text-sm rounded-lg bg-warn/10 text-warn hover:bg-warn/20 border border-warn/30 transition-colors"
+              disabled={aborting}
+              className={`px-4 py-2 text-sm rounded-lg border transition-colors ${
+                aborting
+                  ? 'bg-warn/5 text-warn/50 border-warn/20 cursor-not-allowed'
+                  : 'bg-warn/10 text-warn hover:bg-warn/20 border-warn/30'
+              }`}
             >
-              Abort
+              {aborting ? 'Aborting…' : 'Abort'}
             </button>
           )}
         </div>
       </div>
 
-      {/* Metrics: live WebSocket data during run, results_summary after completion */}
+      {/* Active runs: show everything inline (no tabs) */}
       {isActive ? (
-        hasLiveData ? (
-          <LiveMetrics snapshot={latest} />
-        ) : (
-          <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-500 text-sm mb-6">
-            Waiting for data...
-          </div>
-        )
-      ) : hasSummary ? (
-        <SummaryMetrics summary={summary} />
+        <>
+          {hasLiveData ? (
+            <LiveMetrics snapshot={latest} />
+          ) : (
+            <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-500 text-sm mb-6">
+              Waiting for data...
+            </div>
+          )}
+
+          {snapshots.length > 1 && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <LatencyTimeline snapshots={snapshots} />
+                <ThroughputChart snapshots={snapshots} />
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <ErrorChart snapshots={snapshots} />
+                <ProfileBreakdown snapshots={snapshots} />
+              </div>
+            </div>
+          )}
+          {snapshots.length <= 1 && (
+            <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-600 text-sm">
+              Collecting data points for charts...
+            </div>
+          )}
+
+          <RequestLog snapshots={snapshots} historicalRequests={historicalRequests} />
+        </>
       ) : (
-        <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-500 text-sm mb-6">
-          No metrics available for this benchmark.
-        </div>
-      )}
+        <>
+          {/* Completed/aborted/failed: show tabs */}
+          <TabBar
+            tabs={[
+              { id: 'overview', label: 'Overview' },
+              { id: 'analysis', label: 'Analysis' },
+            ]}
+            activeTab={activeTab}
+            onChange={setActiveTab}
+          />
 
-      {/* Charts */}
-      {snapshots.length > 1 && (
-        <div className="space-y-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <LatencyTimeline snapshots={snapshots} />
-            <ThroughputChart snapshots={snapshots} />
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <ErrorChart snapshots={snapshots} />
-            <ProfileBreakdown snapshots={snapshots} />
-          </div>
-        </div>
-      )}
-      {snapshots.length <= 1 && !isActive && !hasSummary && (
-        <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-600 text-sm">
-          Not enough data points to render charts.
-        </div>
-      )}
-      {snapshots.length <= 1 && isActive && (
-        <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-600 text-sm">
-          Collecting data points for charts...
-        </div>
-      )}
+          {activeTab === 'overview' && (
+            <>
+              {hasSummary ? (
+                <SummaryMetrics summary={summary} />
+              ) : (
+                <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-500 text-sm mb-6">
+                  No metrics available for this benchmark.
+                </div>
+              )}
 
-      {/* Request log — visible during and after runs */}
-      <RequestLog snapshots={snapshots} historicalRequests={historicalRequests} />
+              {snapshots.length > 1 && (
+                <div className="space-y-4">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <LatencyTimeline snapshots={snapshots} />
+                    <ThroughputChart snapshots={snapshots} />
+                  </div>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                    <ErrorChart snapshots={snapshots} />
+                    <ProfileBreakdown snapshots={snapshots} />
+                  </div>
+                </div>
+              )}
+              {snapshots.length <= 1 && !hasSummary && (
+                <div className="p-8 bg-surface-800 border border-surface-600 rounded-xl text-center text-gray-600 text-sm">
+                  Not enough data points to render charts.
+                </div>
+              )}
+
+              <RequestLog snapshots={snapshots} historicalRequests={historicalRequests} />
+            </>
+          )}
+
+          {activeTab === 'analysis' && (
+            <AnalysisTab benchmarkId={id} />
+          )}
+        </>
+      )}
     </div>
   );
 }
@@ -305,21 +353,25 @@ function LiveMetrics({ snapshot }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard
           label="P50 TTFT (Turn 1)"
+          tooltip="Time to First Token — how long until the model starts responding. P50 = median (half of requests are faster). Measured on the first turn only, before conversation context grows."
           value={s.rolling_p50_ttft_t1_ms != null ? `${s.rolling_p50_ttft_t1_ms.toFixed(0)} ms` : '-'}
           subtitle="last 30s"
         />
         <MetricCard
           label="P95 TTFT (Turn 1)"
+          tooltip="Time to First Token at the 95th percentile — only 5% of requests take longer than this. High P95 indicates occasional slowdowns even if the median is fast."
           value={s.rolling_p95_ttft_t1_ms != null ? `${s.rolling_p95_ttft_t1_ms.toFixed(0)} ms` : '-'}
           subtitle="last 30s"
         />
         <MetricCard
           label="Median tok/s"
+          tooltip="Tokens per second — how fast the model generates output text. Higher is better. This is the median (P50) generation speed across recent requests."
           value={s.rolling_avg_tps != null ? s.rolling_avg_tps.toFixed(1) : '-'}
           subtitle="last 30s"
         />
         <MetricCard
           label="Slow tok/s (P5)"
+          tooltip="The slowest 5% of requests by generation speed. If this drops significantly below the median, some requests are experiencing severe slowdowns."
           value={s.rolling_p5_tps != null ? s.rolling_p5_tps.toFixed(1) : '-'}
           subtitle="last 30s"
           color={s.rolling_p5_tps != null && s.rolling_p5_tps < TPS_SLOW_THRESHOLD ? 'danger' : 'ok'}
@@ -356,21 +408,25 @@ function SummaryMetrics({ summary }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricCard
           label="P50 TTFT (Turn 1)"
+          tooltip="Time to First Token — how long until the model starts responding. P50 = median (half of requests are faster). Measured on the first turn only, before conversation context grows."
           value={`${fmt(summary.ttft_t1_p50_ms)} ms`}
           subtitle="first turn"
         />
         <MetricCard
           label="P95 TTFT (Turn 1)"
+          tooltip="Time to First Token at the 95th percentile — only 5% of requests take longer than this. High P95 indicates occasional slowdowns even if the median is fast."
           value={`${fmt(summary.ttft_t1_p95_ms)} ms`}
           subtitle="first turn"
         />
         <MetricCard
           label="P50 tok/s"
+          tooltip="Tokens per second — how fast the model generates output text. Higher is better. This is the median generation speed across all requests."
           value={fmt1(summary.tps_p50)}
           subtitle="generation speed"
         />
         <MetricCard
           label="Slow tok/s (P5)"
+          tooltip="The slowest 5% of requests by generation speed. If this drops significantly below the median, some requests are experiencing severe slowdowns."
           value={fmt1(summary.tps_p5)}
           subtitle="worst 5%"
           color={summary.tps_p5 != null && summary.tps_p5 < 10 ? 'danger' : 'ok'}
@@ -383,11 +439,13 @@ function SummaryMetrics({ summary }) {
           <>
             <MetricCard
               label="P50 TTFT (Multi-Turn)"
+              tooltip="Time to First Token for follow-up turns in a conversation. These requests include prior conversation context, so they're typically slower than first-turn TTFT."
               value={`${fmt(summary.ttft_multi_p50_ms)} ms`}
               subtitle="context-heavy"
             />
             <MetricCard
               label="P95 TTFT (Multi-Turn)"
+              tooltip="95th percentile Time to First Token for follow-up turns. Shows how the model handles growing conversation context under load."
               value={`${fmt(summary.ttft_multi_p95_ms)} ms`}
               subtitle="context-heavy"
             />
@@ -396,11 +454,13 @@ function SummaryMetrics({ summary }) {
           <>
             <MetricCard
               label="P50 TGT"
+              tooltip="Total Generation Time — the full time from sending the request to receiving the last token. Includes TTFT + all token generation time."
               value={`${fmt(summary.tgt_p50_ms)} ms`}
               subtitle="total generation"
             />
             <MetricCard
               label="P95 TGT"
+              tooltip="Total Generation Time at the 95th percentile. Shows the worst-case total response time for most requests."
               value={`${fmt(summary.tgt_p95_ms)} ms`}
               subtitle="total generation"
             />
@@ -408,10 +468,12 @@ function SummaryMetrics({ summary }) {
         )}
         <MetricCard
           label="Output Tokens"
+          tooltip="Total number of tokens generated across all requests in this benchmark run."
           value={(summary.total_output_tokens || 0).toLocaleString()}
         />
         <MetricCard
           label="Throughput"
+          tooltip="Average successful requests completed per second over the entire run duration."
           value={summary.avg_throughput_rps != null ? `${summary.avg_throughput_rps} req/s` : '-'}
           subtitle="avg over run"
         />
@@ -420,7 +482,7 @@ function SummaryMetrics({ summary }) {
   );
 }
 
-function MetricCard({ label, value, subtitle, color }) {
+function MetricCard({ label, value, subtitle, color, tooltip }) {
   const textColor =
     color === 'danger' ? 'text-danger' :
     color === 'ok' ? 'text-green-400' :
@@ -428,7 +490,10 @@ function MetricCard({ label, value, subtitle, color }) {
 
   return (
     <div className="bg-surface-800 border border-surface-600 rounded-xl p-3">
-      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1">{label}</div>
+      <div className="text-[10px] uppercase tracking-wider text-gray-500 mb-1 inline-flex items-center gap-1">
+        {label}
+        {tooltip && <InfoTip text={tooltip} />}
+      </div>
       <div className={`text-lg font-mono font-semibold ${textColor}`}>{value}</div>
       {subtitle && (
         <div className="text-[9px] text-gray-600 mt-0.5">{subtitle}</div>

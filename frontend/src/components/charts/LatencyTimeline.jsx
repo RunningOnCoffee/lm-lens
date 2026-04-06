@@ -4,6 +4,7 @@ import {
   CartesianGrid, Tooltip, Legend,
 } from 'recharts';
 import { COLORS, AXIS_STYLE, GRID_STYLE, TOOLTIP_STYLE } from './ChartTheme';
+import InfoTip from '../InfoTip';
 
 function formatElapsed(seconds) {
   if (seconds == null) return '';
@@ -63,8 +64,9 @@ export default function LatencyTimeline({ snapshots }) {
 
   return (
     <div className="bg-surface-800 border border-surface-600 rounded-xl p-4">
-      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3">
+      <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold mb-3 inline-flex items-center gap-1.5">
         First-Turn TTFT Over Time
+        <InfoTip text="Time to First Token over the benchmark duration. Shows how response latency changes under load. The shaded area shows active users. P50 = median, P95 = 95th percentile." />
       </h3>
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>

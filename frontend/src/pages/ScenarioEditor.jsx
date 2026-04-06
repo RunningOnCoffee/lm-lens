@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { scenariosApi, profilesApi } from '../api/client';
+import InfoTip from '../components/InfoTip';
 
 const DEFAULT_LLM_PARAMS = {
   max_tokens: null,
@@ -599,19 +600,6 @@ function Field({ label, tooltip, children }) {
       </span>
       {children}
     </label>
-  );
-}
-
-function InfoTip({ text }) {
-  return (
-    <span className="relative group cursor-help">
-      <span className="inline-flex items-center justify-center w-3.5 h-3.5 rounded-full bg-surface-600 text-gray-500 text-[9px] font-bold leading-none">
-        i
-      </span>
-      <span className="absolute bottom-full left-1/2 -translate-x-1/2 mb-1.5 px-2.5 py-1.5 text-[11px] text-gray-300 bg-surface-700 border border-surface-600 rounded-lg shadow-lg w-64 opacity-0 pointer-events-none group-hover:opacity-100 transition-opacity z-50 leading-relaxed">
-        {text}
-      </span>
-    </span>
   );
 }
 
