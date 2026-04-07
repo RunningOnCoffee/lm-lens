@@ -59,6 +59,12 @@ export const benchmarksApi = {
   delete: (id) => api.del(`/benchmarks/${id}`),
   abort: (id) => api.post(`/benchmarks/${id}/abort`),
   snapshots: (id) => api.get(`/benchmarks/${id}/snapshots`),
+  sessions: (id, params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v != null && v !== '')
+    ).toString();
+    return api.get(`/benchmarks/${id}/sessions${qs ? `?${qs}` : ''}`);
+  },
   requests: (id, params = {}) => {
     const qs = new URLSearchParams(
       Object.entries(params).filter(([, v]) => v != null && v !== '')

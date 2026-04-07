@@ -10,6 +10,7 @@ import ThroughputChart from '../components/charts/ThroughputChart';
 import ErrorChart from '../components/charts/ErrorChart';
 import ProfileBreakdown from '../components/charts/ProfileBreakdown';
 import RequestLog from '../components/RequestLog';
+import ResponseBrowser from '../components/ResponseBrowser';
 
 export default function BenchmarkRun() {
   const { id } = useParams();
@@ -219,6 +220,7 @@ export default function BenchmarkRun() {
             tabs={[
               { id: 'overview', label: 'Overview' },
               { id: 'analysis', label: 'Analysis' },
+              { id: 'responses', label: 'Responses' },
             ]}
             activeTab={activeTab}
             onChange={setActiveTab}
@@ -258,6 +260,10 @@ export default function BenchmarkRun() {
 
           {activeTab === 'analysis' && (
             <AnalysisTab benchmarkId={id} />
+          )}
+
+          {activeTab === 'responses' && (
+            <ResponseBrowser benchmarkId={id} />
           )}
         </>
       )}

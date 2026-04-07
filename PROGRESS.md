@@ -90,13 +90,48 @@
 - [x] Frontend: Endpoint name/model shown in benchmark list
 
 ## Phase 7: Results & Response Browser
-- [ ] Frontend: Results summary page (post-run analysis)
-- [ ] Latency distribution histogram
-- [ ] Per-profile performance comparison
-- [ ] Response browser (browse full conversations, filter, sort)
-- [ ] Quality flags (truncated, empty, refusal, repeated tokens)
-- [ ] Benchmark comparison mode (overlay two runs)
-- [ ] Export (CSV/JSON)
+
+### 7a: Backend Foundation (complete)
+- [x] Quality flags JSONB column + Alembic migration 006
+- [x] Quality flag detection at write time (empty, truncated, refusal, repeated_tokens)
+- [x] finish_reason capture in LLM client (streaming + non-streaming)
+- [x] Paginated GET /requests with filters (profile, turn, error, quality_flag, success, session) and sorting
+- [x] GET /histogram endpoint (server-side bin computation, p50/p95/p99/mean stats)
+- [x] GET /profile-stats endpoint (per-profile aggregated stats + quality flag counts)
+- [x] GET /compare endpoint (side-by-side benchmark comparison)
+- [x] GET /export endpoint (CSV streaming + JSON download)
+- [x] Quality flag counts in _compute_summary
+- [x] Pytest tests for all new endpoints (21 total)
+
+### 7b: Tab Navigation + Analysis Tab (complete)
+- [x] Tab bar component (Overview | Analysis | Responses) for completed/aborted/failed runs
+- [x] Latency histogram chart (Recharts BarChart, metric selector, profile filter, p50/p95/p99 reference lines)
+- [x] Per-profile comparison chart (grouped bars TTFT p50/p95) + stats table with quality flags
+- [x] Shared InfoTip component (portal-based tooltips, positioned above icon)
+- [x] InfoTip tooltips on all metric acronyms (TTFT, TGT, P50, P95, tok/s) across all pages
+- [x] Abort button immediate "Aborting…" feedback
+- [x] RequestLog field normalization for Phase 7a schema changes
+- [x] Bulk delete on benchmarks list view
+
+### 7c: Response Browser (complete)
+- [x] GET /sessions endpoint (session-level aggregates with pagination, profile filter)
+- [x] Session-grouped conversation list with summary stats (profile, turns, TTFT, tok/s, tokens, flags)
+- [x] Chat-style conversation view (user prompt + LLM response bubbles, turn by turn)
+- [x] Expandable turn details (metrics, request body JSON, ITL sparkline)
+- [x] Quality flag pills (colored: amber=truncated, gray=empty, red=refusal, purple=repeated)
+- [x] Profile filter, session pagination
+
+### 7d: Export UI
+- [ ] Export dropdown on BenchmarkRun header (CSV / JSON download)
+
+### 7e: Benchmark Comparison Mode
+- [ ] BenchmarkCompare page (side-by-side summary, overlaid histograms, per-profile table)
+- [ ] Multi-select + Compare button on benchmarks list
+
+### 7f: Polish
+- [ ] Quality flag counts on Overview tab
+- [ ] finish_reason end-to-end verification with mock server
+- [ ] Final visual polish
 
 ## Phase 8: Load Curves & Breaking Point Detection
 - [ ] Load curve visualization in scenario builder

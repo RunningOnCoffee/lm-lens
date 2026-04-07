@@ -7,7 +7,7 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -34,8 +34,8 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/benchmarks", tags=["benchmarks"])
 
 
-def _round(value: float | None) -> float | None:
-    return round(value, 2) if value is not None else None
+def _round(value: float | None, precision: int = 2) -> float | None:
+    return round(value, precision) if value is not None else None
 
 
 # ---------------------------------------------------------------------------
@@ -446,6 +446,92 @@ async def get_benchmark_snapshots(benchmark_id: UUID, db: AsyncSession = Depends
         data.append(d)
 
     return {"data": data}
+
+
+@router.get("/{benchmark_id}/sessions")
+async def get_benchmark_sessions(
+    benchmark_id: UUID,
+    page: int = Query(1, ge=1),
+    per_page: int = Query(20, ge=1, le=100),
+    profile_id: UUID | None = Query(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get paginated session-level summaries for a benchmark."""
+    benchmark = await _get_benchmark_or_404(benchmark_id, db)
+    profile_names = _profile_name_map(benchmark)
+
+    # Base filter
+    base = select(BenchmarkRequest).where(BenchmarkRequest.benchmark_id == benchmark_id)
+    if profile_id is not None:
+        base = base.where(BenchmarkRequest.profile_id == profile_id)
+    sub = base.subquery()
+
+    # Aggregate per session
+    session_query = (
+        select(
+            sub.c.session_id,
+            sub.c.profile_id,
+            func.count().label("turn_count"),
+            func.min(sub.c.ttft_ms).label("first_ttft_ms"),
+            func.avg(sub.c.tokens_per_second).label("avg_tps"),
+            func.sum(sub.c.output_tokens).label("total_output_tokens"),
+            func.sum(case((sub.c.error_type.isnot(None), 1), else_=0)).label("error_count"),
+            func.min(sub.c.created_at).label("started_at"),
+        )
+        .group_by(sub.c.session_id, sub.c.profile_id)
+        .order_by(func.min(sub.c.created_at).asc())
+    )
+
+    # Count total sessions
+    count_q = select(func.count()).select_from(session_query.subquery())
+    total = (await db.execute(count_q)).scalar() or 0
+
+    # Paginate
+    session_query = session_query.offset((page - 1) * per_page).limit(per_page)
+    result = await db.execute(session_query)
+    rows = result.all()
+
+    # Collect session_ids to fetch quality flags
+    session_ids = [r.session_id for r in rows]
+    flags_map = {}
+    if session_ids:
+        flags_q = (
+            select(
+                BenchmarkRequest.session_id,
+                BenchmarkRequest.quality_flags,
+            )
+            .where(
+                BenchmarkRequest.benchmark_id == benchmark_id,
+                BenchmarkRequest.session_id.in_(session_ids),
+                BenchmarkRequest.quality_flags.isnot(None),
+            )
+        )
+        flags_result = await db.execute(flags_q)
+        for fr in flags_result.all():
+            if fr.quality_flags:
+                sid = str(fr.session_id)
+                if sid not in flags_map:
+                    flags_map[sid] = set()
+                flags_map[sid].update(fr.quality_flags)
+
+    data = []
+    for r in rows:
+        pid_str = str(r.profile_id) if r.profile_id else ""
+        sid_str = str(r.session_id)
+        data.append({
+            "session_id": sid_str,
+            "profile_id": pid_str,
+            "profile_name": profile_names.get(pid_str, pid_str[:8] if pid_str else "unknown"),
+            "turn_count": r.turn_count,
+            "first_ttft_ms": _round(r.first_ttft_ms),
+            "avg_tps": _round(r.avg_tps, 1),
+            "total_output_tokens": r.total_output_tokens or 0,
+            "error_count": r.error_count,
+            "quality_flags": sorted(flags_map.get(sid_str, [])),
+            "started_at": r.started_at.isoformat() if r.started_at else None,
+        })
+
+    return {"data": data, "meta": {"total": total, "page": page, "per_page": per_page}}
 
 
 @router.get("/{benchmark_id}/requests")
