@@ -11,6 +11,7 @@ import ErrorChart from '../components/charts/ErrorChart';
 import ProfileBreakdown from '../components/charts/ProfileBreakdown';
 import RequestLog from '../components/RequestLog';
 import ResponseBrowser from '../components/ResponseBrowser';
+import QualityFlagPill from '../components/QualityFlagPill';
 
 export default function BenchmarkRun() {
   const { id } = useParams();
@@ -490,6 +491,26 @@ function SummaryMetrics({ summary }) {
           subtitle="avg over run"
         />
       </div>
+
+      {/* Quality flags (only if any exist) */}
+      {summary.quality_flags && Object.values(summary.quality_flags).some((v) => v > 0) && (
+        <div className="bg-surface-800 border border-surface-600 rounded-xl p-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-[10px] uppercase tracking-wider text-gray-600 mr-1">
+              Quality Flags
+            </span>
+            <InfoTip text="Quality flags are automatically detected issues in LLM responses. Truncated = hit max_tokens limit. Empty = no output generated. Refusal = model declined to answer. Repeated = suspiciously repetitive output." />
+            {Object.entries(summary.quality_flags)
+              .filter(([, count]) => count > 0)
+              .map(([flag, count]) => (
+                <span key={flag} className="inline-flex items-center gap-1.5">
+                  <QualityFlagPill flag={flag} />
+                  <span className="text-xs font-mono text-gray-400">{count}</span>
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

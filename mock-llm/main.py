@@ -83,6 +83,16 @@ async def chat_completions(request: ChatRequest):
     response_text = generate_response_text(prompt_tokens)
     output_tokens = count_tokens(response_text)
 
+    # Enforce max_tokens: truncate response if limit is set
+    finish_reason = "stop"
+    if request.max_tokens is not None and output_tokens > request.max_tokens:
+        words = response_text.split()
+        # Truncate to approximate max_tokens (tokens ≈ words * 0.75)
+        max_words = max(1, int(request.max_tokens / 0.75))
+        response_text = " ".join(words[:max_words])
+        output_tokens = request.max_tokens
+        finish_reason = "length"
+
     # Simulate TTFT latency
     ttft_seconds = LATENCY_MS / 1000.0 * random.uniform(0.8, 1.2)
     await asyncio.sleep(ttft_seconds)
@@ -91,7 +101,7 @@ async def chat_completions(request: ChatRequest):
 
     if request.stream:
         return StreamingResponse(
-            _stream_response(completion_id, response_text, output_tokens, prompt_tokens),
+            _stream_response(completion_id, response_text, output_tokens, prompt_tokens, finish_reason),
             media_type="text/event-stream",
         )
 
@@ -108,7 +118,7 @@ async def chat_completions(request: ChatRequest):
             {
                 "index": 0,
                 "message": {"role": "assistant", "content": response_text},
-                "finish_reason": "stop",
+                "finish_reason": finish_reason,
             }
         ],
         "usage": {
@@ -119,7 +129,7 @@ async def chat_completions(request: ChatRequest):
     }
 
 
-async def _stream_response(completion_id: str, text: str, output_tokens: int, prompt_tokens: int):
+async def _stream_response(completion_id: str, text: str, output_tokens: int, prompt_tokens: int, finish_reason: str = "stop"):
     """Stream tokens at the configured rate."""
     words = text.split()
     tokens_sent = 0
@@ -150,7 +160,7 @@ async def _stream_response(completion_id: str, text: str, output_tokens: int, pr
         "object": "chat.completion.chunk",
         "created": int(time.time()),
         "model": "mock-llm",
-        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+        "choices": [{"index": 0, "delta": {}, "finish_reason": finish_reason}],
         "usage": {
             "prompt_tokens": prompt_tokens,
             "completion_tokens": tokens_sent,

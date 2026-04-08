@@ -132,8 +132,8 @@
 - [x] Route: /benchmarks/compare?a={id}&b={id}
 
 ### 7f: Polish
-- [ ] Quality flag counts on Overview tab
-- [ ] finish_reason end-to-end verification with mock server
+- [x] Quality flag counts on Overview tab (colored pills with counts, only shown when flags exist)
+- [x] finish_reason end-to-end verification with mock server (mock respects max_tokens, returns "length")
 - [ ] Final visual polish
 
 ## Phase 8: Load Curves & Breaking Point Detection
