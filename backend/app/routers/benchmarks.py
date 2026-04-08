@@ -80,14 +80,15 @@ _REQUEST_SORT_COLUMNS = {
 def _build_scenario_snapshot(scenario, scenario_profiles) -> dict:
     """Freeze the scenario config into a JSON-serializable dict."""
     profiles_data = []
-    for sp in scenario_profiles:
+    # Sort scenario_profiles by profile_id for deterministic seed ordering
+    for sp in sorted(scenario_profiles, key=lambda sp: str(sp.profile_id)):
         profile = sp.profile
         # Serialize the full profile data needed by the runner
         templates = []
-        for t in profile.conversation_templates:
+        for t in sorted(profile.conversation_templates, key=lambda t: str(t.id)):
             follow_ups = [
                 {"content": fu.content, "is_universal": fu.is_universal}
-                for fu in t.follow_ups
+                for fu in sorted(t.follow_ups, key=lambda fu: str(fu.id))
             ]
             templates.append({
                 "starter_prompt": t.starter_prompt,
@@ -97,13 +98,13 @@ def _build_scenario_snapshot(scenario, scenario_profiles) -> dict:
 
         universal_fus = [
             {"content": fu.content, "is_universal": True}
-            for fu in profile.follow_up_prompts
+            for fu in sorted(profile.follow_up_prompts, key=lambda fu: str(fu.id))
             if fu.is_universal
         ]
 
         variables = [
             {"name": v.name, "values": v.values}
-            for v in profile.template_variables
+            for v in sorted(profile.template_variables, key=lambda v: v.name)
         ]
 
         profiles_data.append({
@@ -199,6 +200,12 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
     snapshot = _build_scenario_snapshot(scenario, scenario.profiles)
     ep_snapshot = _build_endpoint_snapshot(endpoint)
 
+    # Generate prompt plan if seed is provided
+    prompt_plan = None
+    if body.seed is not None:
+        from app.engine.prompt_plan import generate_prompt_plan
+        prompt_plan = generate_prompt_plan(snapshot, body.seed)
+
     # Create benchmark row
     benchmark = Benchmark(
         scenario_id=body.scenario_id,
@@ -206,6 +213,8 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
         status="pending",
         scenario_snapshot=snapshot,
         endpoint_snapshot=ep_snapshot,
+        seed=body.seed,
+        prompt_plan=prompt_plan,
     )
     db.add(benchmark)
     await db.flush()
@@ -218,6 +227,7 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
         scenario_snapshot=snapshot,
         endpoint_snapshot=ep_snapshot,
         session_factory=async_session,
+        prompt_plan=prompt_plan,
     )
     asyncio.create_task(runner.run())
 
@@ -226,6 +236,7 @@ async def start_benchmark(body: BenchmarkCreate, db: AsyncSession = Depends(get_
             id=benchmark.id,
             scenario_id=benchmark.scenario_id,
             endpoint_id=benchmark.endpoint_id,
+            seed=benchmark.seed,
             status=benchmark.status,
             scenario_snapshot=benchmark.scenario_snapshot,
             endpoint_snapshot=benchmark.endpoint_snapshot,
@@ -277,6 +288,7 @@ async def list_benchmarks(db: AsyncSession = Depends(get_db)):
                 model_name=ep_snap.get("model_name", ""),
                 gpu=ep_snap.get("gpu"),
                 inference_engine=ep_snap.get("inference_engine"),
+                seed=bench.seed,
                 status=bench.status,
                 total_requests=total_reqs or 0,
                 duration_seconds=duration,
@@ -310,7 +322,7 @@ async def compare_benchmarks(
 
     benchmarks = [
         BenchmarkRead(
-            id=b.id, scenario_id=b.scenario_id, endpoint_id=b.endpoint_id,
+            id=b.id, scenario_id=b.scenario_id, endpoint_id=b.endpoint_id, seed=b.seed,
             status=b.status, scenario_snapshot=b.scenario_snapshot,
             endpoint_snapshot=b.endpoint_snapshot, results_summary=b.results_summary,
             error_message=b.error_message, started_at=b.started_at,
@@ -322,6 +334,80 @@ async def compare_benchmarks(
     ]
 
     return {"data": {"benchmarks": benchmarks}}
+
+
+@router.get("/compare/sessions")
+async def compare_sessions(
+    ids: str = Query(..., description="Comma-separated benchmark UUIDs (exactly 2)"),
+    session_index: int = Query(..., ge=0),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get paired conversation turns for a specific session index across two benchmarks."""
+    parts = [p.strip() for p in ids.split(",") if p.strip()]
+    if len(parts) != 2:
+        raise HTTPException(status_code=400, detail="Provide exactly 2 benchmark IDs")
+
+    try:
+        id_a, id_b = UUID(parts[0]), UUID(parts[1])
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    bench_a = await _get_benchmark_or_404(id_a, db)
+    bench_b = await _get_benchmark_or_404(id_b, db)
+    names_a = _profile_name_map(bench_a)
+    names_b = _profile_name_map(bench_b)
+
+    async def _get_session_requests(benchmark_id: UUID, prompt_plan: list | None, idx: int, profile_names: dict):
+        """Get requests for a session, matched by session_index via prompt_plan ordering."""
+        # Get all sessions ordered by creation time, pick the one at index
+        session_q = (
+            select(BenchmarkRequest.session_id)
+            .where(BenchmarkRequest.benchmark_id == benchmark_id)
+            .group_by(BenchmarkRequest.session_id)
+            .order_by(func.min(BenchmarkRequest.created_at).asc())
+        )
+        result = await db.execute(session_q)
+        session_ids = [r[0] for r in result.all()]
+        if idx >= len(session_ids):
+            return []
+
+        target_session = session_ids[idx]
+        req_q = (
+            select(BenchmarkRequest)
+            .where(
+                BenchmarkRequest.benchmark_id == benchmark_id,
+                BenchmarkRequest.session_id == target_session,
+            )
+            .order_by(BenchmarkRequest.turn_number.asc())
+        )
+        result = await db.execute(req_q)
+        rows = result.scalars().all()
+
+        data = []
+        for r in rows:
+            item = BenchmarkRequestRead.model_validate(r).model_dump(mode="json")
+            pid_str = str(r.profile_id) if r.profile_id else ""
+            item["profile_name"] = profile_names.get(pid_str, pid_str[:8] if pid_str else "unknown")
+            data.append(item)
+        return data
+
+    requests_a = await _get_session_requests(id_a, bench_a.prompt_plan, session_index, names_a)
+    requests_b = await _get_session_requests(id_b, bench_b.prompt_plan, session_index, names_b)
+
+    # Get prompt plan entry for this session if available
+    plan_entry = None
+    plan = bench_a.prompt_plan or bench_b.prompt_plan
+    if plan and session_index < len(plan):
+        plan_entry = plan[session_index]
+
+    return {
+        "data": {
+            "session_index": session_index,
+            "prompt_plan": plan_entry,
+            "a": requests_a,
+            "b": requests_b,
+        }
+    }
 
 
 @router.get("/export/{benchmark_id}")
@@ -408,6 +494,7 @@ async def get_benchmark(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
             id=benchmark.id,
             scenario_id=benchmark.scenario_id,
             endpoint_id=benchmark.endpoint_id,
+            seed=benchmark.seed,
             status=benchmark.status,
             scenario_snapshot=benchmark.scenario_snapshot,
             endpoint_snapshot=benchmark.endpoint_snapshot,

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, NavLink } from 'react-router-dom';
 import Dashboard from './pages/Dashboard';
 import Benchmarks from './pages/Benchmarks';
 import BenchmarkRun from './pages/BenchmarkRun';
+import BenchmarkCompare from './pages/BenchmarkCompare';
 import Endpoints from './pages/Endpoints';
 import EndpointEditor from './pages/EndpointEditor';
 import Profiles from './pages/Profiles';
@@ -49,6 +50,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/benchmarks" element={<Benchmarks />} />
+            <Route path="/benchmarks/compare" element={<BenchmarkCompare />} />
             <Route path="/benchmarks/:id" element={<BenchmarkRun />} />
             <Route path="/scenarios" element={<Scenarios />} />
             <Route path="/scenarios/new" element={<ScenarioEditor />} />

@@ -121,12 +121,15 @@
 - [x] Quality flag pills (colored: amber=truncated, gray=empty, red=refusal, purple=repeated)
 - [x] Profile filter, session pagination
 
-### 7d: Export UI
-- [ ] Export dropdown on BenchmarkRun header (CSV / JSON download)
+### 7d: Export UI (complete)
+- [x] Export dropdown on BenchmarkRun header (CSV / JSON download)
+- [x] Accent-colored button with loading state
 
-### 7e: Benchmark Comparison Mode
-- [ ] BenchmarkCompare page (side-by-side summary, overlaid histograms, per-profile table)
-- [ ] Multi-select + Compare button on benchmarks list
+### 7e: Benchmark Comparison Mode (complete)
+- [x] BenchmarkCompare page (side-by-side run info, key metrics table with delta %, per-profile breakdown)
+- [x] Delta badges with color coding (green = better, red = worse, context-aware for latency vs throughput)
+- [x] Multi-select exactly 2 benchmarks → Compare button on bulk action bar
+- [x] Route: /benchmarks/compare?a={id}&b={id}
 
 ### 7f: Polish
 - [ ] Quality flag counts on Overview tab

@@ -27,13 +27,16 @@ class Profile(Base):
     )
 
     conversation_templates: Mapped[list["ConversationTemplate"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan",
+        order_by="ConversationTemplate.id",
     )
     follow_up_prompts: Mapped[list["FollowUpPrompt"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan",
+        order_by="FollowUpPrompt.id",
     )
     template_variables: Mapped[list["TemplateVariable"]] = relationship(
-        back_populates="profile", cascade="all, delete-orphan"
+        back_populates="profile", cascade="all, delete-orphan",
+        order_by="TemplateVariable.id",
     )
 
 
@@ -58,6 +61,7 @@ class ConversationTemplate(Base):
         back_populates="template",
         foreign_keys="FollowUpPrompt.template_id",
         cascade="all, delete-orphan",
+        order_by="FollowUpPrompt.id",
     )
 
 

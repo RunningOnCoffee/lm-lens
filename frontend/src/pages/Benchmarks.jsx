@@ -28,11 +28,14 @@ export default function Benchmarks() {
 
   const [selectedScenario, setSelectedScenario] = useState('');
   const [selectedEndpoint, setSelectedEndpoint] = useState('');
+  const [seedInput, setSeedInput] = useState('');
   const [starting, setStarting] = useState(false);
   const [actionError, setActionError] = useState(null);
   const [selected, setSelected] = useState(new Set());
   const [confirming, setConfirming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareSelected, setCompareSelected] = useState(new Set());
 
   useEffect(() => { fetchBenchmarks(); fetchScenarios(); fetchEndpoints(); }, [fetchBenchmarks, fetchScenarios, fetchEndpoints]);
 
@@ -49,7 +52,8 @@ export default function Benchmarks() {
     setStarting(true);
     setActionError(null);
     try {
-      const benchmark = await startBenchmark(selectedScenario, selectedEndpoint);
+      const seed = seedInput.trim() ? parseInt(seedInput.trim(), 10) : undefined;
+      const benchmark = await startBenchmark(selectedScenario, selectedEndpoint, isNaN(seed) ? undefined : seed);
       navigate(`/benchmarks/${benchmark.id}`);
     } catch (err) {
       setActionError(err.message);
@@ -115,6 +119,31 @@ export default function Benchmarks() {
     }
   };
 
+  // Compare mode helpers
+  const toggleCompareSelect = (id) => {
+    setCompareSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) {
+        next.delete(id);
+      } else if (next.size < 2) {
+        next.add(id);
+      }
+      return next;
+    });
+  };
+
+  const exitCompareMode = () => {
+    setCompareMode(false);
+    setCompareSelected(new Set());
+  };
+
+  const handleCompare = () => {
+    const [a, b] = [...compareSelected];
+    navigate(`/benchmarks/compare?a=${a}&b=${b}`);
+  };
+
+  const completedCount = benchmarks.filter((b) => b.status !== 'running' && b.status !== 'pending').length;
+
   const formatDuration = (seconds) => {
     if (seconds == null) return '-';
     if (seconds >= 3600) return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`;
@@ -136,12 +165,20 @@ export default function Benchmarks() {
     );
   }
 
-  const cols = 'grid-cols-[40px_1fr_140px_120px_100px_80px_100px_160px]';
+  const cols = 'grid-cols-[40px_1fr_140px_60px_120px_100px_80px_100px_160px]';
 
   return (
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 className="font-heading text-2xl font-bold">Benchmarks</h1>
+        {!compareMode && completedCount >= 2 && (
+          <button
+            onClick={() => { setCompareMode(true); setSelected(new Set()); setConfirming(false); }}
+            className="px-4 py-2 text-sm rounded-lg bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 hover:text-accent-bright transition-colors font-medium"
+          >
+            Compare Runs
+          </button>
+        )}
       </div>
 
       {/* Start new benchmark */}
@@ -178,10 +215,34 @@ export default function Benchmarks() {
               ))}
             </select>
           </div>
+          <div className="w-36">
+            <label className="block text-xs text-gray-500 mb-1">
+              Seed
+              <span className="text-gray-600 ml-1" title="Optional. Use the same seed + scenario to get identical prompts for fair comparison.">(optional)</span>
+            </label>
+            <div className="flex items-center gap-1">
+              <input
+                type="text"
+                inputMode="numeric"
+                value={seedInput}
+                onChange={(e) => setSeedInput(e.target.value.replace(/[^0-9]/g, ''))}
+                placeholder="Random"
+                className="input w-full text-center"
+              />
+              <button
+                type="button"
+                onClick={() => setSeedInput(String(Math.floor(Math.random() * 100000)))}
+                className="px-1.5 py-1.5 text-[10px] rounded bg-surface-700 text-gray-400 hover:text-gray-200 hover:bg-surface-600 transition-colors flex-shrink-0"
+                title="Generate random seed"
+              >
+                🎲
+              </button>
+            </div>
+          </div>
           <button
             onClick={handleStart}
             disabled={!selectedScenario || !selectedEndpoint || starting}
-            className="px-5 py-2 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            className="px-5 py-2 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap self-end"
           >
             {starting ? 'Starting...' : 'Run Benchmark'}
           </button>
@@ -194,8 +255,38 @@ export default function Benchmarks() {
         </div>
       )}
 
+      {/* Compare mode banner */}
+      {compareMode && (
+        <div className="mb-3 flex items-center gap-3 px-4 py-3 bg-accent/5 border border-accent/30 rounded-xl">
+          <div className="flex-1">
+            <div className="text-sm text-accent font-medium">
+              {compareSelected.size === 0 && 'Select 2 benchmarks to compare'}
+              {compareSelected.size === 1 && 'Select 1 more benchmark'}
+              {compareSelected.size === 2 && 'Ready to compare'}
+            </div>
+            <div className="text-[11px] text-gray-500 mt-0.5">
+              Click on completed benchmarks to select them for comparison
+            </div>
+          </div>
+          {compareSelected.size === 2 && (
+            <button
+              onClick={handleCompare}
+              className="px-5 py-2 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors"
+            >
+              Compare Now
+            </button>
+          )}
+          <button
+            onClick={exitCompareMode}
+            className="px-3 py-1.5 text-xs text-danger/70 border border-danger/30 rounded-lg hover:bg-danger/10 hover:text-danger transition-colors"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {/* Bulk action bar */}
-      {someSelected && (
+      {!compareMode && someSelected && (
         <div className="mb-2 flex items-center gap-3 px-4 py-2.5 bg-surface-800 border border-surface-600 rounded-lg">
           <span className="text-xs text-gray-400">{selected.size} selected</span>
           <div className="h-4 w-px bg-surface-600" />
@@ -233,6 +324,7 @@ export default function Benchmarks() {
           </div>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold">Scenario</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Endpoint</span>
+          <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Seed</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Status</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Requests</span>
           <span className="text-[10px] uppercase tracking-wider text-gray-500 font-semibold text-center">Duration</span>
@@ -250,6 +342,10 @@ export default function Benchmarks() {
               isSelected={selected.has(b.id)}
               isDeletable={isDeletable}
               onToggle={() => toggleSelect(b.id)}
+              compareMode={compareMode}
+              compareSelected={compareSelected.has(b.id)}
+              compareSelectable={isDeletable && (compareSelected.size < 2 || compareSelected.has(b.id))}
+              onCompareToggle={() => toggleCompareSelect(b.id)}
               formatDuration={formatDuration}
               formatTime={formatTime}
               onView={() => navigate(`/benchmarks/${b.id}`)}
@@ -269,16 +365,37 @@ export default function Benchmarks() {
   );
 }
 
-function BenchmarkRow({ benchmark, cols, isSelected, isDeletable, onToggle, formatDuration, formatTime, onView, onAbort, onDelete }) {
+function BenchmarkRow({ benchmark, cols, isSelected, isDeletable, onToggle, compareMode, compareSelected, compareSelectable, onCompareToggle, formatDuration, formatTime, onView, onAbort, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
   const isActive = benchmark.status === 'running' || benchmark.status === 'pending';
 
+  const rowBg = compareMode
+    ? compareSelected
+      ? 'bg-accent/10 border-l-2 border-l-accent'
+      : compareSelectable
+        ? 'hover:bg-surface-700/50 cursor-pointer'
+        : 'opacity-40'
+    : isSelected
+      ? 'bg-accent/5'
+      : 'hover:bg-surface-700/50';
+
   return (
-    <div className={`grid ${cols} items-center px-4 py-3 border-b border-surface-600/50 last:border-b-0 transition-colors ${
-      isSelected ? 'bg-accent/5' : 'hover:bg-surface-700/50'
-    }`}>
+    <div
+      className={`grid ${cols} items-center px-4 py-3 border-b border-surface-600/50 last:border-b-0 transition-colors ${rowBg}`}
+      onClick={compareMode && compareSelectable ? onCompareToggle : undefined}
+    >
       <div className="flex items-center justify-center">
-        {isDeletable ? (
+        {compareMode ? (
+          compareSelectable ? (
+            <div className={`w-4 h-4 rounded-full border-2 flex items-center justify-center transition-colors ${
+              compareSelected ? 'border-accent bg-accent' : 'border-gray-500'
+            }`}>
+              {compareSelected && <span className="text-surface-900 text-[9px] font-bold">&#10003;</span>}
+            </div>
+          ) : (
+            <div className="w-4 h-4" />
+          )
+        ) : isDeletable ? (
           <input
             type="checkbox"
             checked={isSelected}
@@ -301,6 +418,9 @@ function BenchmarkRow({ benchmark, cols, isSelected, isDeletable, onToggle, form
           <span className="text-[10px] text-gray-600 truncate block">{benchmark.model_name}</span>
         )}
       </div>
+      <span className="text-xs text-gray-500 text-center font-mono">
+        {benchmark.seed != null ? benchmark.seed : '-'}
+      </span>
       <div className="flex justify-center">
         <StatusBadge status={benchmark.status} />
       </div>

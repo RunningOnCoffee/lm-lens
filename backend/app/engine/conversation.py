@@ -24,6 +24,9 @@ class SessionConfig:
     templates: list[dict] = field(default_factory=list)
     universal_follow_ups: list[str] = field(default_factory=list)
     variables: dict[str, list[str]] = field(default_factory=dict)
+    # Seeded mode: pre-generated prompts, no conversation history
+    seeded_prompts: list[str] | None = None
+    session_index: int | None = None
 
 
 _VAR_PATTERN = re.compile(r"\$([A-Z_][A-Z0-9_]*)")
@@ -52,6 +55,10 @@ class ConversationSimulator:
 
     async def run(self) -> None:
         """Run one complete conversation session."""
+        if self._config.seeded_prompts is not None:
+            await self._run_seeded()
+            return
+
         if not self._config.templates:
             return
 
@@ -94,6 +101,33 @@ class ConversationSimulator:
             # Simulate read time + think time (unless last turn or aborted)
             if turn < num_turns - 1 and not self._abort.is_set():
                 read_time = len(result.response_text.split()) * self._config.read_time_factor
+                think_time = random.uniform(*self._config.think_time_seconds)
+                await self._interruptible_sleep(read_time + think_time)
+
+    async def _run_seeded(self) -> None:
+        """Run with pre-generated prompts and accumulated conversation history."""
+        prompts = self._config.seeded_prompts
+        messages: list[dict] = []
+        for turn, prompt in enumerate(prompts):
+            if self._abort.is_set():
+                return
+
+            messages.append({"role": "user", "content": prompt})
+            result = await self._client.send(messages)
+
+            await self._collector.record(
+                result=result,
+                profile_id=self._config.profile_id,
+                session_id=self._session_id,
+                turn_number=turn,
+            )
+
+            if result.success and result.response_text:
+                messages.append({"role": "assistant", "content": result.response_text})
+
+            # Think time between turns
+            if turn < len(prompts) - 1 and not self._abort.is_set():
+                read_time = len(result.response_text.split()) * self._config.read_time_factor if result.response_text else 0
                 think_time = random.uniform(*self._config.think_time_seconds)
                 await self._interruptible_sleep(read_time + think_time)
 

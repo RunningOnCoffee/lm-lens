@@ -34,11 +34,13 @@ class BenchmarkRunner:
         scenario_snapshot: dict,
         endpoint_snapshot: dict,
         session_factory,
+        prompt_plan: list[dict] | None = None,
     ) -> None:
         self._benchmark_id = benchmark_id
         self._scenario = scenario_snapshot
         self._endpoint = endpoint_snapshot
         self._session_factory = session_factory
+        self._prompt_plan = prompt_plan
         self._abort_event = asyncio.Event()
         self._user_aborted = False
         self._llm_client: LLMClient | None = None
@@ -275,6 +277,10 @@ class BenchmarkRunner:
 
     def _build_all_sessions(self) -> list[SessionConfig]:
         """Build SessionConfig for each virtual user from the scenario snapshot."""
+        # If we have a prompt plan (seeded mode), build sessions from it
+        if self._prompt_plan:
+            return self._build_seeded_sessions()
+
         sessions: list[SessionConfig] = []
         profiles_data = self._scenario.get("profiles", [])
 
@@ -322,6 +328,36 @@ class BenchmarkRunner:
 
             for _ in range(user_count):
                 sessions.append(config)
+
+        return sessions
+
+    def _build_seeded_sessions(self) -> list[SessionConfig]:
+        """Build SessionConfigs from a pre-generated prompt plan."""
+        # Build a behavior lookup by profile_id
+        behavior_map: dict[str, dict] = {}
+        for sp in self._scenario.get("profiles", []):
+            profile = sp.get("profile", {})
+            pid = str(profile.get("id", ""))
+            behavior = sp.get("behavior_overrides") or profile.get("behavior_defaults", {})
+            behavior_map[pid] = behavior
+
+        sessions: list[SessionConfig] = []
+        for entry in self._prompt_plan:
+            pid = entry["profile_id"]
+            behavior = behavior_map.get(pid, {})
+            think = behavior.get("think_time_seconds", {"min": 1, "max": 5})
+
+            config = SessionConfig(
+                profile_id=uuid.UUID(pid),
+                session_mode="multi_turn",
+                turns_per_session=(len(entry["prompts"]), len(entry["prompts"])),
+                think_time_seconds=(think.get("min", 1.0), think.get("max", 5.0)),
+                sessions_per_user=(1, 1),
+                read_time_factor=behavior.get("read_time_factor", 0.02),
+                seeded_prompts=entry["prompts"],
+                session_index=entry["session_index"],
+            )
+            sessions.append(config)
 
         return sessions
 

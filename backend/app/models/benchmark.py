@@ -21,6 +21,8 @@ class Benchmark(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending")
     scenario_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
     endpoint_snapshot: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prompt_plan: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     results_summary: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

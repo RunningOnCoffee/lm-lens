@@ -135,6 +135,9 @@ export default function BenchmarkRun() {
               </span>
             )}
             <span className="text-xs text-gray-600 font-mono">{id.slice(0, 8)}</span>
+            {benchmark.seed != null && (
+              <span className="text-[11px] text-accent/50 font-mono">seed: {benchmark.seed}</span>
+            )}
           </div>
           {benchmark.endpoint_snapshot && benchmark.endpoint_snapshot.name && (
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
@@ -178,6 +181,9 @@ export default function BenchmarkRun() {
             >
               {aborting ? 'Aborting…' : 'Abort'}
             </button>
+          )}
+          {!isActive && (
+            <ExportDropdown benchmarkId={id} />
           )}
         </div>
       </div>
@@ -503,6 +509,59 @@ function MetricCard({ label, value, subtitle, color, tooltip }) {
       <div className={`text-lg font-mono font-semibold ${textColor}`}>{value}</div>
       {subtitle && (
         <div className="text-[9px] text-gray-600 mt-0.5">{subtitle}</div>
+      )}
+    </div>
+  );
+}
+
+function ExportDropdown({ benchmarkId }) {
+  const [open, setOpen] = useState(false);
+  const [exporting, setExporting] = useState(null);
+
+  const handleExport = async (format) => {
+    setExporting(format);
+    try {
+      if (format === 'csv') {
+        await benchmarksApi.exportCSV(benchmarkId);
+      } else {
+        await benchmarksApi.exportJSON(benchmarkId);
+      }
+    } catch {
+      // silently fail — file download
+    } finally {
+      setExporting(null);
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="px-4 py-2 text-sm rounded-lg bg-accent/10 border border-accent/30 text-accent hover:bg-accent/20 hover:text-accent-bright transition-colors font-medium"
+      >
+        Export ▾
+      </button>
+      {open && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 mt-1 w-36 bg-surface-700 border border-surface-600 rounded-lg shadow-lg z-50 overflow-hidden">
+            <button
+              onClick={() => handleExport('csv')}
+              disabled={exporting != null}
+              className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-surface-600 transition-colors disabled:text-gray-600"
+            >
+              {exporting === 'csv' ? 'Exporting…' : 'Download CSV'}
+            </button>
+            <button
+              onClick={() => handleExport('json')}
+              disabled={exporting != null}
+              className="w-full text-left px-3 py-2 text-xs text-gray-300 hover:bg-surface-600 transition-colors disabled:text-gray-600 border-t border-surface-600"
+            >
+              {exporting === 'json' ? 'Exporting…' : 'Download JSON'}
+            </button>
+          </div>
+        </>
       )}
     </div>
   );

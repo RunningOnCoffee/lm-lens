@@ -79,7 +79,7 @@ class LLMClient:
     def _build_body(self, messages: list[dict]) -> dict:
         body: dict = {
             "model": self._model,
-            "messages": messages,
+            "messages": [m.copy() for m in messages],
             "stream": self._stream,
         }
         # Add LLM params, skipping None/empty values

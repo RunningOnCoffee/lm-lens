@@ -45,7 +45,8 @@ class Scenario(Base):
     )
 
     profiles: Mapped[list["ScenarioProfile"]] = relationship(
-        back_populates="scenario", cascade="all, delete-orphan"
+        back_populates="scenario", cascade="all, delete-orphan",
+        order_by="ScenarioProfile.id",
     )
 
 

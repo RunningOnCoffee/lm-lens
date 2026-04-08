@@ -9,12 +9,14 @@ from pydantic import BaseModel, Field
 class BenchmarkCreate(BaseModel):
     scenario_id: UUID
     endpoint_id: UUID
+    seed: int | None = None
 
 
 class BenchmarkRead(BaseModel):
     id: UUID
     scenario_id: UUID
     endpoint_id: UUID | None = None
+    seed: int | None = None
     status: str
     scenario_snapshot: dict = {}
     endpoint_snapshot: dict = {}
@@ -38,6 +40,7 @@ class BenchmarkSummary(BaseModel):
     model_name: str = ""
     gpu: str | None = None
     inference_engine: str | None = None
+    seed: int | None = None
     status: str
     total_requests: int = 0
     duration_seconds: float | None = None

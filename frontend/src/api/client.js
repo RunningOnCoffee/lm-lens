@@ -55,7 +55,11 @@ export const endpointsApi = {
 export const benchmarksApi = {
   list: () => api.get('/benchmarks'),
   get: (id) => api.get(`/benchmarks/${id}`),
-  start: (scenarioId, endpointId) => api.post('/benchmarks', { scenario_id: scenarioId, endpoint_id: endpointId }),
+  start: (scenarioId, endpointId, seed) => api.post('/benchmarks', {
+    scenario_id: scenarioId,
+    endpoint_id: endpointId,
+    ...(seed != null ? { seed } : {}),
+  }),
   delete: (id) => api.del(`/benchmarks/${id}`),
   abort: (id) => api.post(`/benchmarks/${id}/abort`),
   snapshots: (id) => api.get(`/benchmarks/${id}/snapshots`),
@@ -79,6 +83,7 @@ export const benchmarksApi = {
   },
   profileStats: (id) => api.get(`/benchmarks/${id}/profile-stats`),
   compare: (idA, idB) => api.get(`/benchmarks/compare?ids=${idA},${idB}`),
+  compareSession: (idA, idB, sessionIndex) => api.get(`/benchmarks/compare/sessions?ids=${idA},${idB}&session_index=${sessionIndex}`),
   exportJSON: async (id) => {
     const resp = await fetch(`${BASE_URL}/benchmarks/export/${id}?format=json`);
     const blob = await resp.blob();
