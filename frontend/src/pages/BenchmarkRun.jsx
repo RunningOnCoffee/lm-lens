@@ -203,7 +203,7 @@ export default function BenchmarkRun() {
           {snapshots.length > 1 && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                <LatencyTimeline snapshots={snapshots} />
+                <LatencyTimeline snapshots={snapshots} breakingPoint={summary?.breaking_point} />
                 <ThroughputChart snapshots={snapshots} />
               </div>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
@@ -246,7 +246,7 @@ export default function BenchmarkRun() {
               {snapshots.length > 1 && (
                 <div className="space-y-4">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                    <LatencyTimeline snapshots={snapshots} />
+                    <LatencyTimeline snapshots={snapshots} breakingPoint={summary?.breaking_point} />
                     <ThroughputChart snapshots={snapshots} />
                   </div>
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

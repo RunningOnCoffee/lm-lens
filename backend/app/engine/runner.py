@@ -12,6 +12,7 @@ from sqlalchemy import func, select
 from app.engine.collector import MetricCollector
 from app.engine.conversation import ConversationSimulator, SessionConfig
 from app.engine.llm_client import LLMClient
+from app.engine.load_curves import create_curve
 from app.engine.snapshots import SnapshotGenerator, percentile, ws_manager
 from app.models.benchmark import Benchmark, BenchmarkRequest, BenchmarkSnapshot
 
@@ -48,6 +49,8 @@ class BenchmarkRunner:
         self._snapshot_gen: SnapshotGenerator | None = None
         self._semaphore: asyncio.Semaphore | None = None
         self._active_user_count: int = 0
+        self._target_user_count: int = 0
+        self._breaking_point: dict | None = None
 
     async def run(self) -> None:
         _active_runners[self._benchmark_id] = self
@@ -137,89 +140,113 @@ class BenchmarkRunner:
         await self._cancel_tasks(tasks)
 
     async def _run_ramp(self, config: dict) -> None:
-        """Add users in steps over time. Each user loops sessions until duration ends."""
-        duration = config.get("duration_seconds", 60)
-        step_size = config.get("ramp_users_per_step", 1)
-        interval = config.get("ramp_interval_seconds", 10)
-        sessions = self._build_all_sessions()
-        tasks: list[asyncio.Task] = []
-        idx = 0
-
-        while idx < len(sessions) and not self._abort_event.is_set():
-            batch = sessions[idx:idx + step_size]
-            for sc in batch:
-                tasks.append(asyncio.create_task(self._run_user(sc)))
-            idx += step_size
-
-            # Wait for interval or abort
-            try:
-                await asyncio.wait_for(self._abort_event.wait(), timeout=interval)
-                break  # Abort was requested
-            except asyncio.TimeoutError:
-                pass
-
-        # All users launched (or aborted). Wait for remaining duration.
-        # Each user loops until abort_event is set, so we just wait for duration.
-        elapsed_launching = idx / max(step_size, 1) * interval
-        remaining = max(0, duration - elapsed_launching)
-        if remaining > 0 and not self._abort_event.is_set():
-            try:
-                await asyncio.wait_for(self._abort_event.wait(), timeout=remaining)
-            except asyncio.TimeoutError:
-                pass
-
-        self._abort_event.set()
-        await self._cancel_tasks(tasks)
+        """Ramp users according to the configured load curve."""
+        await self._run_with_curve(config, check_breaking=False)
 
     async def _run_breaking_point(self, config: dict) -> None:
-        """Ramp until breaking criteria are breached for 3 consecutive snapshots."""
-        duration = config.get("duration_seconds", 300)
-        step_size = config.get("ramp_users_per_step", 1)
-        interval = config.get("ramp_interval_seconds", 10)
-        criteria = config.get("breaking_criteria", {})
-        max_ttft = criteria.get("max_ttft_ms", 5000)
-        max_itl = criteria.get("max_itl_ms", 500)
-        max_error_rate = criteria.get("max_error_rate_pct", 10.0)
+        """Ramp with load curve until breaking criteria are breached."""
+        await self._run_with_curve(config, check_breaking=True)
+
+    async def _run_with_curve(self, config: dict, check_breaking: bool) -> None:
+        """Generic curve-driven runner: adjusts active users each second to match curve."""
+        duration = config.get("duration_seconds", 60)
+        curve = create_curve(config)
+        sessions = self._build_all_sessions()
+        total_users = len(sessions)
+
+        # Breaking point state
+        criteria = config.get("breaking_criteria", {}) if check_breaking else {}
+        breach_count = 0
         consecutive_threshold = 3
 
-        sessions = self._build_all_sessions()
+        # Shared target that user tasks check between sessions
+        self._target_user_count = 0
         tasks: list[asyncio.Task] = []
-        idx = 0
-        breach_count = 0
+        launched_idx = 0
         start = asyncio.get_event_loop().time()
 
-        while idx < len(sessions) and not self._abort_event.is_set():
+        while not self._abort_event.is_set():
             elapsed = asyncio.get_event_loop().time() - start
             if elapsed >= duration:
                 break
 
-            batch = sessions[idx:idx + step_size]
-            for sc in batch:
-                tasks.append(asyncio.create_task(self._run_user(sc)))
-            idx += step_size
+            # Ask the curve how many users should be active
+            target = curve.target_users(elapsed, total_users, duration)
+            self._target_user_count = target
 
+            # Launch new users if target > currently launched
+            while launched_idx < target and launched_idx < total_users:
+                sc = sessions[launched_idx]
+                tasks.append(asyncio.create_task(self._run_curve_user(sc)))
+                launched_idx += 1
+
+            # Check breaking criteria (every second, from snapshots)
+            if check_breaking and elapsed > 2:  # skip first 2s to collect data
+                reason = await self._check_breaking(criteria)
+                if reason:
+                    breach_count += 1
+                    if breach_count >= consecutive_threshold:
+                        logger.info(
+                            "Breaking point reached: %s (%d consecutive breaches at %d users)",
+                            reason, breach_count, self._active_user_count,
+                        )
+                        # Record breaking point details for the summary
+                        self._breaking_point = {
+                            "elapsed_seconds": round(elapsed, 1),
+                            "active_users": self._active_user_count,
+                            "reason": reason,
+                        }
+                        break
+                else:
+                    breach_count = 0
+
+            # Sleep 1 second (or until abort)
             try:
-                await asyncio.wait_for(self._abort_event.wait(), timeout=interval)
+                await asyncio.wait_for(self._abort_event.wait(), timeout=1.0)
                 break
             except asyncio.TimeoutError:
                 pass
 
-            # Check latest snapshot for breaking criteria
-            if await self._check_breaking(max_ttft, max_itl, max_error_rate):
-                breach_count += 1
-                if breach_count >= consecutive_threshold:
-                    logger.info("Breaking point reached after %d consecutive breaches", breach_count)
-                    break
-            else:
-                breach_count = 0
-
         self._abort_event.set()
         await self._cancel_tasks(tasks)
 
-    async def _check_breaking(
-        self, max_ttft: float, max_itl: float, max_error_rate: float
-    ) -> bool:
-        """Check if the latest snapshot exceeds breaking criteria."""
+    async def _run_curve_user(self, session_config: SessionConfig) -> None:
+        """Run a virtual user that checks the target count between sessions.
+
+        Unlike _run_user, this variant voluntarily exits when the curve
+        reduces the target below the current active count.
+        """
+        self._increment_active_users()
+        try:
+            while not self._abort_event.is_set():
+                # If we have more active users than the curve wants, exit
+                if self._active_user_count > self._target_user_count:
+                    return
+
+                async with self._semaphore:
+                    self._snapshot_gen.requests_in_flight += 1
+                    try:
+                        sim = ConversationSimulator(
+                            config=session_config,
+                            llm_client=self._llm_client,
+                            collector=self._collector,
+                            abort_event=self._abort_event,
+                        )
+                        await sim.run()
+                    finally:
+                        self._snapshot_gen.requests_in_flight -= 1
+        finally:
+            self._decrement_active_users()
+
+    async def _check_breaking(self, criteria: dict) -> str | None:
+        """Check latest snapshot against breaking criteria.
+
+        Returns the reason string if breached, None otherwise.
+        """
+        max_ttft = criteria.get("max_ttft_ms", 5000)
+        max_itl = criteria.get("max_itl_ms", 500)
+        max_error_rate = criteria.get("max_error_rate_pct", 10.0)
+
         try:
             async with self._session_factory() as session:
                 result = await session.execute(
@@ -230,30 +257,31 @@ class BenchmarkRunner:
                 )
                 snap = result.scalar_one_or_none()
                 if not snap:
-                    return False
+                    return None
 
                 # Check TTFT
                 if snap.p95_ttft_ms and snap.p95_ttft_ms > max_ttft:
-                    return True
+                    return "ttft"
 
                 # Check error rate
                 total = snap.completed_requests + snap.failed_requests
                 if total > 0:
                     error_rate = (snap.failed_requests / total) * 100
                     if error_rate > max_error_rate:
-                        return True
+                        return "error_rate"
 
-                # Check ITL via per-request data (use throughput as proxy —
-                # if TGT is way higher than TTFT, tokens are slow)
+                # Check ITL via throughput proxy
                 if snap.p95_tgt_ms and snap.p50_ttft_ms:
-                    avg_itl_approx = (snap.p95_tgt_ms - snap.p50_ttft_ms) / max(1, snap.throughput_tps / max(1, snap.throughput_rps))
+                    avg_itl_approx = (snap.p95_tgt_ms - snap.p50_ttft_ms) / max(
+                        1, snap.throughput_tps / max(1, snap.throughput_rps)
+                    )
                     if avg_itl_approx > max_itl:
-                        return True
+                        return "itl"
 
-                return False
+                return None
         except Exception:
             logger.exception("Error checking breaking criteria")
-            return False
+            return None
 
     async def _run_user(self, session_config: SessionConfig) -> None:
         """Run a single virtual user, looping sessions until abort event is set."""
@@ -471,7 +499,7 @@ class BenchmarkRunner:
                         for flag in r.quality_flags:
                             qf_counts[flag] = qf_counts.get(flag, 0) + 1
 
-                return {
+                summary = {
                     "total_requests": total,
                     "successful_requests": total - errors,
                     "failed_requests": errors,
@@ -497,6 +525,11 @@ class BenchmarkRunner:
                     "total_output_tokens": total_output,
                     "avg_throughput_rps": round((total - errors) / duration, 2) if duration > 0 else 0,
                 }
+
+                if self._breaking_point:
+                    summary["breaking_point"] = self._breaking_point
+
+                return summary
         except Exception:
             logger.exception("Error computing summary")
             return {"error": "Failed to compute summary"}

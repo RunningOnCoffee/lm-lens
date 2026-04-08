@@ -150,7 +150,7 @@
 - [x] Removed lens.bat (docker compose commands documented in CLAUDE.md)
 - [ ] Final visual polish (loading states, empty states, error handling — see audit notes below)
 
-### Visual Polish Audit (deferred to Phase 9)
+### Visual Polish Audit (deferred to Phase 10)
 Identified but not yet implemented:
 - Reusable Spinner component (replace 6+ text-only loading states)
 - RequestLog returns null when empty (should show placeholder card)
@@ -160,16 +160,32 @@ Identified but not yet implemented:
 - Response truncation UX (silent 800/2000 char cuts, no expand option)
 - Success feedback on delete/export actions
 
-## Phase 8: Load Curves & Breaking Point Detection
-- [ ] Load curve visualization in scenario builder
-- [ ] Step / ramp / spike / wave curve implementations
-- [ ] Breaking point auto-detection (latency spike, error threshold)
-- [ ] Breaking point marker on dashboard timeline
+## Phase 8: Load Curves, Breaking Point & Quality-Under-Load
+- [x] Load curve engine: Step, Linear, Spike, Wave implementations (backend)
+- [x] Load curve visualization + preview chart in scenario builder (frontend)
+- [x] Enhanced quality flags (JSON validity, format compliance, length compliance, language detection)
+- [x] Quality flag counts tracked in snapshots + WebSocket broadcast
+- [x] Breaking point auto-detection (latency spike, error threshold, ITL)
+- [x] Breaking point details recorded in results_summary (elapsed, users, reason)
+- [x] Breaking point marker on dashboard timeline (red dashed line with label)
+- [ ] Quality-under-load correlation chart (quality flag rates overlaid on concurrency timeline)
 
-## Phase 9: Polish & Documentation
+## Phase 9: A/B Quality Comparison
+- [ ] Smart evaluation task sets (curated prompt sets to surface quality differences)
+- [ ] Heuristic scoring mechanics (structural checks, consistency, completeness)
+- [ ] Enhanced comparison mode with per-dimension scores and overall winner
+- [ ] Side-by-side quality flag analysis
+- [ ] Aggregate quality scorecard
+
+## Phase 10: Polish & Documentation
 - [ ] Visual polish items from audit (loading states, empty states, error handling)
 - [ ] Cost estimation (user-provided $/token rate)
 - [ ] Error categorization (timeout, rate limit, malformed, refusal)
 - [ ] Endpoint quick-test UI (send one request, see raw response)
 - [ ] Expected throughput estimate in scenario builder
 - [ ] Documentation / README
+
+## Roadmap / Future: LLM-as-Judge
+- Configurable judge endpoint for multi-dimensional quality scoring
+- Multi-dimensional evaluation (relevance, coherence, completeness, instruction-following)
+- Enhances A/B comparison and standalone quality evaluation

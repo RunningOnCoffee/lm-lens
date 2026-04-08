@@ -131,6 +131,7 @@ class BenchmarkSnapshotRead(BaseModel):
     throughput_rps: float = 0.0
     throughput_tps: float = 0.0
     error_count: int = 0
+    quality_flag_count: int = 0
     per_profile: dict | None = None
 
     model_config = {"from_attributes": True}

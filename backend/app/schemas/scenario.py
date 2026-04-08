@@ -32,6 +32,10 @@ class LoadConfig(BaseModel):
     duration_seconds: int = Field(60, ge=1)
     ramp_users_per_step: int = Field(1, ge=1)
     ramp_interval_seconds: int = Field(10, ge=1)
+    load_curve: str = Field("step", pattern="^(step|linear|spike|wave)$")
+    spike_at_pct: float = Field(50.0, ge=0, le=100, description="When the spike occurs (% of duration)")
+    spike_duration_seconds: int = Field(10, ge=1, description="How long the spike lasts")
+    wave_period_seconds: int = Field(30, ge=5, description="Period of the sine wave in seconds")
     breaking_criteria: BreakingCriteria | None = None
 
 

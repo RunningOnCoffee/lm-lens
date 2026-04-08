@@ -96,9 +96,9 @@ class SnapshotGenerator:
             pass
 
     async def _generate(self) -> None:
-        results, profile_ids, turn_numbers = await self._collector.take_window()
+        results, profile_ids, turn_numbers, qf_count = await self._collector.take_window()
 
-        snapshot = self._compute(results, profile_ids)
+        snapshot = self._compute(results, profile_ids, qf_count)
 
         # Write to DB
         try:
@@ -151,6 +151,8 @@ class SnapshotGenerator:
             "throughput_rps": snapshot.throughput_rps,
             "throughput_tps": snapshot.throughput_tps,
             "error_count": snapshot.error_count,
+            "quality_flag_count": snapshot.quality_flag_count,
+            "quality_flag_total": self._collector.total_quality_flagged,
             "per_profile": snapshot.per_profile,
             # Rolling 30s percentiles — all turns
             "rolling_p50_ttft_ms": percentile(rolling_ttft_all, 50),
@@ -173,6 +175,7 @@ class SnapshotGenerator:
         self,
         results: list[LLMRequestResult],
         profile_ids: list[UUID | None],
+        quality_flag_count: int = 0,
     ) -> BenchmarkSnapshot:
         now = datetime.now(timezone.utc)
 
@@ -227,6 +230,7 @@ class SnapshotGenerator:
             throughput_rps=float(ok_count),  # requests in this 1-second window
             throughput_tps=float(total_output_tokens),  # tokens in this 1-second window
             error_count=err_count,
+            quality_flag_count=quality_flag_count,
             per_profile=per_profile if per_profile else None,
         )
 

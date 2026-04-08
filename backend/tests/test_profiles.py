@@ -109,16 +109,17 @@ async def test_update_profile(client):
 
 
 @pytest.mark.asyncio
-async def test_update_builtin_profile_fails(client):
-    # Get a built-in profile
+async def test_update_builtin_profile_allowed(client):
+    # Built-in profiles are editable (Phase 7f change)
     resp = await client.get("/api/v1/profiles")
     builtin = [p for p in resp.json()["data"] if p["is_builtin"]][0]
 
     resp = await client.put(
         f"/api/v1/profiles/{builtin['id']}",
-        json={"name": "Hacked"},
+        json={"name": "Customized"},
     )
-    assert resp.status_code == 403
+    assert resp.status_code == 200
+    assert resp.json()["data"]["name"] == "Customized"
 
 
 @pytest.mark.asyncio

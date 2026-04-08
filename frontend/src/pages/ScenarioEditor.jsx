@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { scenariosApi, profilesApi } from '../api/client';
 import InfoTip from '../components/InfoTip';
+import LoadCurvePreview from '../components/LoadCurvePreview';
 
 const DEFAULT_LLM_PARAMS = {
   max_tokens: null,
@@ -17,8 +18,35 @@ const DEFAULT_LOAD_CONFIG = {
   duration_seconds: 60,
   ramp_users_per_step: 1,
   ramp_interval_seconds: 10,
+  load_curve: 'step',
+  spike_at_pct: 50,
+  spike_duration_seconds: 10,
+  wave_period_seconds: 30,
   breaking_criteria: null,
 };
+
+const LOAD_CURVES = [
+  {
+    value: 'step',
+    label: 'Step',
+    description: 'Add users in fixed batches at regular intervals. Classic staircase pattern.',
+  },
+  {
+    value: 'linear',
+    label: 'Linear',
+    description: 'Smooth linear ramp from 1 user to the full count over the duration.',
+  },
+  {
+    value: 'spike',
+    label: 'Spike',
+    description: 'Run at 20% base load, then spike to 100% at a configurable point.',
+  },
+  {
+    value: 'wave',
+    label: 'Wave',
+    description: 'Sinusoidal oscillation between 20% and 100% of users. Tests fluctuating load.',
+  },
+];
 
 const DEFAULT_BREAKING_CRITERIA = {
   max_ttft_ms: 5000,
@@ -492,32 +520,95 @@ export default function ScenarioEditor() {
         {/* Ramp config — shown for ramp and breaking_point modes */}
         {(loadConfig.test_mode === 'ramp' || loadConfig.test_mode === 'breaking_point') && (
           <div className="mt-4 pt-4 border-t border-surface-600">
-            <span className="text-xs text-gray-500 mb-3 block">Ramp Configuration</span>
-            <div className="grid grid-cols-2 gap-4">
-              <Field label="Users Per Step" tooltip="How many users to add at each ramp step. Users are distributed across profiles proportionally.">
-                <input
-                  type="number"
-                  min={1}
-                  value={loadConfig.ramp_users_per_step}
-                  onChange={(e) => setLoadConfig({ ...loadConfig, ramp_users_per_step: Number(e.target.value) })}
-                  className="input"
-                />
-              </Field>
-              <Field label="Step Interval (seconds)" tooltip="Time between each ramp step. Lower values = faster ramp.">
-                <input
-                  type="number"
-                  min={1}
-                  value={loadConfig.ramp_interval_seconds}
-                  onChange={(e) => setLoadConfig({ ...loadConfig, ramp_interval_seconds: Number(e.target.value) })}
-                  className="input"
-                />
-              </Field>
+            <span className="text-xs text-gray-500 mb-2 block">Load Curve</span>
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {LOAD_CURVES.map((curve) => (
+                <button
+                  key={curve.value}
+                  onClick={() => setLoadConfig({ ...loadConfig, load_curve: curve.value })}
+                  className={`text-left p-2.5 rounded-lg border transition-colors ${
+                    (loadConfig.load_curve || 'step') === curve.value
+                      ? 'border-accent bg-accent/5 text-gray-200'
+                      : 'border-surface-600 text-gray-400 hover:border-gray-500 hover:bg-surface-700/50'
+                  }`}
+                >
+                  <span className={`text-xs font-medium block mb-0.5 ${
+                    (loadConfig.load_curve || 'step') === curve.value ? 'text-accent' : ''
+                  }`}>
+                    {curve.label}
+                  </span>
+                  <span className="text-[10px] text-gray-500 block leading-snug">{curve.description}</span>
+                </button>
+              ))}
             </div>
-            {totalUsers > 0 && (
-              <p className="text-[11px] text-gray-600 mt-2">
-                Ramp: 0 &rarr; {totalUsers} users over ~{formatDuration(Math.ceil(totalUsers / loadConfig.ramp_users_per_step) * loadConfig.ramp_interval_seconds)}
-              </p>
-            )}
+
+            {/* Curve-specific parameters */}
+            <div className="grid grid-cols-2 gap-4">
+              {(loadConfig.load_curve || 'step') === 'step' && (
+                <>
+                  <Field label="Users Per Step" tooltip="How many users to add at each ramp step.">
+                    <input
+                      type="number"
+                      min={1}
+                      value={loadConfig.ramp_users_per_step}
+                      onChange={(e) => setLoadConfig({ ...loadConfig, ramp_users_per_step: Number(e.target.value) })}
+                      className="input"
+                    />
+                  </Field>
+                  <Field label="Step Interval (seconds)" tooltip="Time between each ramp step. Lower values = faster ramp.">
+                    <input
+                      type="number"
+                      min={1}
+                      value={loadConfig.ramp_interval_seconds}
+                      onChange={(e) => setLoadConfig({ ...loadConfig, ramp_interval_seconds: Number(e.target.value) })}
+                      className="input"
+                    />
+                  </Field>
+                </>
+              )}
+              {(loadConfig.load_curve) === 'spike' && (
+                <>
+                  <Field label="Spike At (%)" tooltip="When the spike occurs, as a percentage of the total duration. 50% = midpoint.">
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min={0} max={100} step={1}
+                        value={loadConfig.spike_at_pct ?? 50}
+                        onChange={(e) => setLoadConfig({ ...loadConfig, spike_at_pct: Number(e.target.value) })}
+                        className="flex-1 accent-accent"
+                      />
+                      <span className="text-xs text-gray-400 tabular-nums w-10 text-right">{loadConfig.spike_at_pct ?? 50}%</span>
+                    </div>
+                  </Field>
+                  <Field label="Spike Duration (seconds)" tooltip="How long the spike lasts at full load before returning to base.">
+                    <input
+                      type="number"
+                      min={1}
+                      value={loadConfig.spike_duration_seconds ?? 10}
+                      onChange={(e) => setLoadConfig({ ...loadConfig, spike_duration_seconds: Number(e.target.value) })}
+                      className="input"
+                    />
+                  </Field>
+                </>
+              )}
+              {(loadConfig.load_curve) === 'wave' && (
+                <Field label="Wave Period (seconds)" tooltip="Duration of one full wave cycle. Shorter periods = more rapid oscillation.">
+                  <input
+                    type="number"
+                    min={5}
+                    value={loadConfig.wave_period_seconds ?? 30}
+                    onChange={(e) => setLoadConfig({ ...loadConfig, wave_period_seconds: Number(e.target.value) })}
+                    className="input"
+                  />
+                </Field>
+              )}
+            </div>
+
+            {/* Load curve preview chart */}
+            <div className="mt-4 pt-3 border-t border-surface-600/50">
+              <span className="text-[10px] text-gray-600 mb-1 block">Active Users Over Time</span>
+              <LoadCurvePreview loadConfig={loadConfig} totalUsers={totalUsers} />
+            </div>
           </div>
         )}
 

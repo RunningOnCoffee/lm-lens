@@ -3,6 +3,10 @@ const FLAG_STYLES = {
   empty: 'bg-gray-500/20 text-gray-400 border-gray-500/30',
   refusal: 'bg-danger/20 text-danger border-danger/30',
   repeated_tokens: 'bg-purple-400/20 text-purple-400 border-purple-400/30',
+  invalid_json: 'bg-orange-400/20 text-orange-400 border-orange-400/30',
+  format_noncompliant: 'bg-sky-400/20 text-sky-400 border-sky-400/30',
+  length_noncompliant: 'bg-teal-400/20 text-teal-400 border-teal-400/30',
+  wrong_language: 'bg-pink-400/20 text-pink-400 border-pink-400/30',
 };
 
 const FLAG_LABELS = {
@@ -10,6 +14,10 @@ const FLAG_LABELS = {
   empty: 'Empty',
   refusal: 'Refusal',
   repeated_tokens: 'Repeated',
+  invalid_json: 'Bad JSON',
+  format_noncompliant: 'Bad Format',
+  length_noncompliant: 'Wrong Length',
+  wrong_language: 'Wrong Lang',
 };
 
 export default function QualityFlagPill({ flag }) {

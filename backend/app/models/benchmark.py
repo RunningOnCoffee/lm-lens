@@ -107,6 +107,7 @@ class BenchmarkSnapshot(Base):
     throughput_rps: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     throughput_tps: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     error_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    quality_flag_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     per_profile: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     benchmark: Mapped["Benchmark"] = relationship(back_populates="snapshots")

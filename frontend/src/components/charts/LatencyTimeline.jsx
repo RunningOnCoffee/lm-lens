@@ -1,7 +1,7 @@
 import { useMemo } from 'react';
 import {
   ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis,
-  CartesianGrid, Tooltip, Legend,
+  CartesianGrid, Tooltip, Legend, ReferenceLine,
 } from 'recharts';
 import { COLORS, AXIS_STYLE, GRID_STYLE, TOOLTIP_STYLE } from './ChartTheme';
 import InfoTip from '../InfoTip';
@@ -25,7 +25,14 @@ function movingAverage(values, size) {
   });
 }
 
-export default function LatencyTimeline({ snapshots }) {
+const BREAKING_REASON_LABELS = {
+  ttft: 'TTFT exceeded',
+  error_rate: 'Error rate exceeded',
+  itl: 'ITL exceeded',
+  quality_degradation: 'Quality degraded',
+};
+
+export default function LatencyTimeline({ snapshots, breakingPoint }) {
   const data = useMemo(() => {
     // Check if we have rolling data (live WebSocket) or per-window data (historical)
     const hasRolling = snapshots.some((s) => s.rolling_p50_ttft_t1_ms != null);
@@ -138,6 +145,22 @@ export default function LatencyTimeline({ snapshots }) {
             connectNulls
             isAnimationActive={false}
           />
+          {breakingPoint && (
+            <ReferenceLine
+              yAxisId="ms"
+              x={breakingPoint.elapsed_seconds}
+              stroke={COLORS.danger}
+              strokeWidth={2}
+              strokeDasharray="6 3"
+              label={{
+                value: `Breaking Point: ${BREAKING_REASON_LABELS[breakingPoint.reason] || breakingPoint.reason} @ ${breakingPoint.active_users} users`,
+                position: 'insideTopRight',
+                fill: COLORS.danger,
+                fontSize: 10,
+                fontFamily: 'JetBrains Mono, monospace',
+              }}
+            />
+          )}
         </ComposedChart>
       </ResponsiveContainer>
     </div>

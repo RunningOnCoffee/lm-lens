@@ -259,14 +259,14 @@ async def test_collector_record_and_window():
     assert collector.total_completed == 1
     assert collector.total_failed == 1
 
-    results, profiles, turns = await collector.take_window()
+    results, profiles, turns, qf_count = await collector.take_window()
     assert len(results) == 2
     assert len(profiles) == 2
     assert len(turns) == 2
     assert profiles[0] == profile_id
 
     # Window should be empty after take
-    results2, profiles2, turns2 = await collector.take_window()
+    results2, profiles2, turns2, qf_count2 = await collector.take_window()
     assert len(results2) == 0
     assert len(profiles2) == 0
 
@@ -592,3 +592,153 @@ def test_quality_flag_finish_reason_captured():
     """LLMRequestResult correctly stores finish_reason."""
     result = LLMRequestResult(finish_reason="length")
     assert result.finish_reason == "length"
+
+
+# --- Phase 8c: New quality flag detectors ---
+
+def _make_quality_result(prompt: str, response: str, **kwargs) -> LLMRequestResult:
+    """Helper to build a result with a user prompt in the request body."""
+    return LLMRequestResult(
+        success=True,
+        response_text=response,
+        output_tokens=len(response.split()),
+        finish_reason="stop",
+        request_body={"messages": [{"role": "user", "content": prompt}]},
+        **kwargs,
+    )
+
+
+def test_quality_flag_invalid_json_detected():
+    """Detects invalid JSON when prompt explicitly asks for JSON output."""
+    result = _make_quality_result(
+        "List the top 3 cities. Respond in JSON format.",
+        "Here are the top 3 cities: New York, London, Tokyo.",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "invalid_json" in flags
+
+
+def test_quality_flag_valid_json_no_flag():
+    """Valid JSON response does not trigger the flag."""
+    result = _make_quality_result(
+        "List the top 3 cities. Return a JSON array.",
+        '["New York", "London", "Tokyo"]',
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None or "invalid_json" not in flags
+
+
+def test_quality_flag_json_in_code_block():
+    """Valid JSON inside markdown code fences should not trigger the flag."""
+    result = _make_quality_result(
+        "Give me the config. Output as JSON.",
+        '```json\n{"key": "value"}\n```',
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None or "invalid_json" not in flags
+
+
+def test_quality_flag_json_not_requested():
+    """If JSON is not explicitly requested, don't flag even if response isn't JSON."""
+    result = _make_quality_result(
+        "Tell me about JSON parsing in Python.",
+        "You can use the json module to parse JSON strings.",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None or "invalid_json" not in flags
+
+
+def test_quality_flag_format_bullet_list():
+    """Detects missing bullet list when prompt asks for one."""
+    result = _make_quality_result(
+        "Give me a bullet list of 3 programming languages.",
+        "Python is great. JavaScript is popular. Go is fast.",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "format_noncompliant" in flags
+
+
+def test_quality_flag_format_bullet_list_present():
+    """Bullet list present does not trigger the flag."""
+    result = _make_quality_result(
+        "Give me a bullet list of 3 programming languages.",
+        "- Python\n- JavaScript\n- Go",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None or "format_noncompliant" not in flags
+
+
+def test_quality_flag_format_numbered_list():
+    """Numbered list accepted for bullet list request."""
+    result = _make_quality_result(
+        "Give me a bullet list of items.",
+        "1. First item\n2. Second item\n3. Third item",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None or "format_noncompliant" not in flags
+
+
+def test_quality_flag_format_code_block():
+    """Detects missing code block when prompt asks for one."""
+    result = _make_quality_result(
+        "Show me a code block with a hello world function.",
+        "def hello(): print('hello world')",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "format_noncompliant" in flags
+
+
+def test_quality_flag_length_too_long():
+    """Detects response that is way longer than requested."""
+    result = _make_quality_result(
+        "Explain gravity in 2 sentences.",
+        "Gravity is a force. It pulls things down. It was discovered by Newton. "
+        "It affects all objects. The moon orbits Earth because of gravity. "
+        "Einstein later refined our understanding. General relativity describes "
+        "gravity as spacetime curvature. This was confirmed by observations.",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "length_noncompliant" in flags
+
+
+def test_quality_flag_length_ok():
+    """Response matching the requested length does not trigger the flag."""
+    result = _make_quality_result(
+        "Explain gravity in 2 sentences.",
+        "Gravity is a force that attracts objects toward each other. It keeps planets in orbit around the sun.",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None or "length_noncompliant" not in flags
+
+
+def test_quality_flag_wrong_language():
+    """Detects script mismatch between Latin prompt and CJK response."""
+    result = _make_quality_result(
+        "Tell me about the history of computing in detail please.",
+        "\u8ba1\u7b97\u673a\u7684\u5386\u53f2\u53ef\u4ee5\u8ffd\u6eaf\u5230\u53e4\u4ee3\u7684\u7b97\u76d8\u548c\u8ba1\u7b97\u5de5\u5177\u3002"
+        "\u73b0\u4ee3\u8ba1\u7b97\u673a\u7684\u53d1\u5c55\u59cb\u4e8e\u4e8c\u5341\u4e16\u7eaa\u3002",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is not None
+    assert "wrong_language" in flags
+
+
+def test_quality_flag_same_language_no_flag():
+    """Same script in prompt and response does not trigger the flag."""
+    result = _make_quality_result(
+        "Tell me about Python programming.",
+        "Python is a high-level programming language known for its readability.",
+    )
+    flags = _compute_quality_flags(result)
+    assert flags is None or "wrong_language" not in flags
+
+
+def test_quality_flag_short_text_no_language_flag():
+    """Very short texts should not trigger language mismatch."""
+    result = _make_quality_result("Hi", "OK")
+    flags = _compute_quality_flags(result)
+    assert flags is None or "wrong_language" not in flags
