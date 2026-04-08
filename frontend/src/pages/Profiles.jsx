@@ -121,7 +121,7 @@ export default function Profiles() {
         selectable={false}
         emptyMessage="No built-in profiles."
         onClone={handleClone}
-        onView={(id) => navigate(`/profiles/${id}`)}
+        onEdit={(id) => navigate(`/profiles/${id}/edit`)}
       />
 
       {/* Custom profiles table */}

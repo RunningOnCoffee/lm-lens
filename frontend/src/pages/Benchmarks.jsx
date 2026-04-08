@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import useBenchmarkStore from '../stores/benchmarkStore';
 import useScenarioStore from '../stores/scenarioStore';
 import useEndpointStore from '../stores/endpointStore';
+import InfoTip from '../components/InfoTip';
 
 const STATUS_STYLES = {
   pending:   'bg-gray-500/20 text-gray-400',
@@ -52,7 +53,9 @@ export default function Benchmarks() {
     setStarting(true);
     setActionError(null);
     try {
-      const seed = seedInput.trim() ? parseInt(seedInput.trim(), 10) : undefined;
+      const seed = seedInput.trim()
+        ? parseInt(seedInput.trim(), 10)
+        : Math.floor(1000 + Math.random() * 9000); // Auto-generate 4-digit seed
       const benchmark = await startBenchmark(selectedScenario, selectedEndpoint, isNaN(seed) ? undefined : seed);
       navigate(`/benchmarks/${benchmark.id}`);
     } catch (err) {
@@ -216,9 +219,10 @@ export default function Benchmarks() {
             </select>
           </div>
           <div className="w-36">
-            <label className="block text-xs text-gray-500 mb-1">
+            <label className="block text-xs text-gray-500 mb-1 flex items-center gap-1">
               Seed
-              <span className="text-gray-600 ml-1" title="Optional. Use the same seed + scenario to get identical prompts for fair comparison.">(optional)</span>
+              <span className="text-gray-600">(optional)</span>
+              <InfoTip text="Use the same seed + scenario to get identical prompts across runs, enabling fair side-by-side comparison of different endpoints." />
             </label>
             <div className="flex items-center gap-1">
               <input

@@ -41,6 +41,9 @@ export default function ProfileEditor() {
   const [error, setError] = useState(null);
   const [saved, setSaved] = useState(false);
   const [profileId, setProfileId] = useState(id || null);
+  const [isBuiltin, setIsBuiltin] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [confirmReset, setConfirmReset] = useState(false);
 
   useEffect(() => {
     if (!id) return;
@@ -66,6 +69,7 @@ export default function ProfileEditor() {
           .map((f) => ({ content: f.content, is_universal: true }))
       );
       setProfileId(p.id);
+      setIsBuiltin(p.is_builtin);
     }).catch((err) => setError(err.message));
   }, [id]);
 
@@ -115,6 +119,46 @@ export default function ProfileEditor() {
       setError(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleReset = async () => {
+    if (!confirmReset) {
+      setConfirmReset(true);
+      setTimeout(() => setConfirmReset(false), 5000);
+      return;
+    }
+    setResetting(true);
+    setConfirmReset(false);
+    setError(null);
+    try {
+      const res = await profilesApi.reset(id);
+      const p = res.data;
+      setName(p.name);
+      setDescription(p.description);
+      setBehavior(p.behavior_defaults);
+      setTemplates(
+        p.conversation_templates.map((t) => ({
+          category: t.category,
+          starter_prompt: t.starter_prompt,
+          expected_response_tokens: t.expected_response_tokens,
+          follow_ups: t.follow_ups.map((f) => ({ content: f.content })),
+        }))
+      );
+      setVariables(
+        p.template_variables.map((v) => ({ name: v.name, values: v.values }))
+      );
+      setUniversalFollowUps(
+        p.follow_up_prompts
+          .filter((f) => f.is_universal)
+          .map((f) => ({ content: f.content, is_universal: true }))
+      );
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setResetting(false);
     }
   };
 
@@ -213,12 +257,34 @@ export default function ProfileEditor() {
         <h1 className="font-heading text-2xl font-bold">
           {isEdit ? 'Edit Profile' : 'New Profile'}
         </h1>
-        <button
-          onClick={() => navigate('/profiles')}
-          className="px-3 py-1.5 text-sm rounded-lg text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-colors"
-        >
-          &larr; Back
-        </button>
+        <div className="flex items-center gap-2">
+          {isBuiltin && (
+            <button
+              onClick={handleReset}
+              disabled={resetting}
+              className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                confirmReset
+                  ? 'bg-danger/20 text-danger hover:bg-danger/30'
+                  : 'bg-surface-700 text-gray-400 hover:text-gray-200 hover:bg-surface-600'
+              }`}
+            >
+              {resetting ? 'Resetting...' : confirmReset ? 'Confirm Reset' : 'Reset to Defaults'}
+            </button>
+          )}
+          <button
+            onClick={handleSave}
+            disabled={saving || !name.trim() || hasRangeErrors}
+            className="px-4 py-1.5 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : isEdit ? 'Save Changes' : 'Create Profile'}
+          </button>
+          <button
+            onClick={() => navigate('/profiles')}
+            className="px-3 py-1.5 text-sm rounded-lg text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-colors"
+          >
+            &larr; Back
+          </button>
+        </div>
       </div>
 
       {error && (

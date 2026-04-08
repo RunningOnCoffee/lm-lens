@@ -8,7 +8,7 @@
 - [x] React + Vite + Tailwind frontend skeleton
 - [x] Nginx reverse proxy config (frontend proxies /api/ to backend)
 - [x] Mock LLM server (OpenAI-compatible, configurable latency + streaming)
-- [x] lens.bat convenience commands (replaced Makefile)
+- [x] Docker Compose commands documented in CLAUDE.md
 - [x] .env setup
 
 ## Phase 2: Prompt Data Model & Seed Data
@@ -16,7 +16,7 @@
 - [x] Alembic migration for all tables
 - [x] Pydantic schemas for all models
 - [x] Seed data: 7 built-in profiles with starter prompts, follow-ups, variables, code snippets
-- [x] Seed runner (upsert on startup via slug)
+- [x] Seed runner (insert-if-missing on startup via slug, edits preserved)
 - [x] Profiles list + detail API endpoints
 - [x] Pytest tests for models and seed
 
@@ -25,7 +25,7 @@
 - [x] Conversation preview endpoint (generate a sample conversation)
 - [x] Frontend: Profile list page (two-table layout, multi-select, bulk actions)
 - [x] Frontend: Profile editor (create/edit/clone with prompt management)
-- [x] Frontend: Profile view page (read-only for built-in profiles)
+- [x] Frontend: Profile editor (built-in profiles editable with Reset to Defaults)
 - [x] Frontend: Conversation preview panel
 - [x] Variable syntax: $VAR_NAME (uppercase, alphanumeric), replaces {{var_name}}
 - [x] Editor UX: info tooltips, single-shot fades turns, min/max labels + validation
@@ -131,10 +131,34 @@
 - [x] Multi-select exactly 2 benchmarks → Compare button on bulk action bar
 - [x] Route: /benchmarks/compare?a={id}&b={id}
 
+### 7e Fixes: Seeded Benchmark Bugs
+- [x] Deterministic snapshot ordering (sorted relationships + order_by on models)
+- [x] Seeded multi-turn conversation history accumulation
+- [x] Request body stores message snapshot, not mutable reference
+- [x] Comparison responses show per-side prompts for non-seeded runs
+- [x] maxTurns based on actual requests, not prompt plan length
+
 ### 7f: Polish
 - [x] Quality flag counts on Overview tab (colored pills with counts, only shown when flags exist)
 - [x] finish_reason end-to-end verification with mock server (mock respects max_tokens, returns "length")
-- [ ] Final visual polish
+- [x] Seed input InfoTip tooltip (replaced browser title attribute)
+- [x] Save button in header of Profile and Scenario editors (no scrolling needed)
+- [x] Auto-generated 4-digit seed when user doesn't provide one (always reproducible)
+- [x] Built-in profiles are editable with "Reset to Defaults" button
+- [x] Seed runner only creates profiles that don't exist (user edits survive restarts)
+- [x] POST /profiles/{id}/reset endpoint for built-in profile restoration
+- [x] Removed lens.bat (docker compose commands documented in CLAUDE.md)
+- [ ] Final visual polish (loading states, empty states, error handling — see audit notes below)
+
+### Visual Polish Audit (deferred to Phase 9)
+Identified but not yet implemented:
+- Reusable Spinner component (replace 6+ text-only loading states)
+- RequestLog returns null when empty (should show placeholder card)
+- Silent API error handling (.catch(() => {})) across multiple components
+- Delete confirmation auto-dismiss timeout
+- Chart empty states (LatencyTimeline, ThroughputChart)
+- Response truncation UX (silent 800/2000 char cuts, no expand option)
+- Success feedback on delete/export actions
 
 ## Phase 8: Load Curves & Breaking Point Detection
 - [ ] Load curve visualization in scenario builder
@@ -142,11 +166,10 @@
 - [ ] Breaking point auto-detection (latency spike, error threshold)
 - [ ] Breaking point marker on dashboard timeline
 
-## Phase 9: Polish
+## Phase 9: Polish & Documentation
+- [ ] Visual polish items from audit (loading states, empty states, error handling)
 - [ ] Cost estimation (user-provided $/token rate)
 - [ ] Error categorization (timeout, rate limit, malformed, refusal)
 - [ ] Endpoint quick-test UI (send one request, see raw response)
-- [ ] Expected throughput estimate in scenario builder (warn when think_time × users × duration yields very few requests)
-- [ ] Responsive layout refinements
-- [ ] Loading states and empty states
-- [ ] Documentation
+- [ ] Expected throughput estimate in scenario builder
+- [ ] Documentation / README

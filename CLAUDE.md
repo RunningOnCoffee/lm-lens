@@ -82,19 +82,19 @@ All API responses follow a consistent format:
 
 ### Database Seeding
 - Built-in profiles have a `slug` field (e.g., `casual-user`) used as stable identifier
-- Seed uses upsert logic: insert if slug missing, update if exists — allows updating built-in prompts across versions
+- Built-in profiles are editable by users; seed only creates profiles that don't exist yet
+- `POST /profiles/{id}/reset` restores a built-in profile to its original seed data
 - Never creates duplicates on restart
 
-### Commands (lens.bat)
+### Common Commands
 ```
-lens up        — docker compose up --build -d
-lens down      — docker compose down
-lens logs      — docker compose logs -f
-lens test      — docker compose exec lm-lens-api pytest
-lens db-shell  — connect to Postgres via psql
-lens reset     — docker compose down -v && docker compose up --build -d
+docker compose up --build -d       — Build and start all services
+docker compose down                — Stop all services
+docker compose logs -f             — Tail all service logs
+docker compose exec lm-lens-api pytest -v  — Run backend tests
+docker compose exec lm-lens-db psql -U lm-lens -d lm-lens  — Open psql shell
+docker compose down -v && docker compose up --build -d      — Full reset (destroys data)
 ```
-Or just run the `docker compose` commands directly.
 
 ## File Structure
 ```

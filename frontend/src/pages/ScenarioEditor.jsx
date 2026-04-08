@@ -229,12 +229,21 @@ export default function ScenarioEditor() {
         <h1 className="font-heading text-2xl font-bold">
           {isEdit ? 'Edit Scenario' : 'New Scenario'}
         </h1>
-        <button
-          onClick={() => navigate('/scenarios')}
-          className="px-3 py-1.5 text-sm rounded-lg text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-colors"
-        >
-          &larr; Back
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleSave}
+            disabled={saveState === 'saving' || !canSave}
+            className={`px-4 py-1.5 text-sm rounded-lg font-semibold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed ${saveButtonClass}`}
+          >
+            {saveState === 'saving' ? 'Saving...' : saveState === 'saved' ? 'Saved!' : isEdit ? 'Save Changes' : 'Create Scenario'}
+          </button>
+          <button
+            onClick={() => navigate('/scenarios')}
+            className="px-3 py-1.5 text-sm rounded-lg text-gray-400 hover:text-gray-200 hover:bg-surface-700 transition-colors"
+          >
+            &larr; Back
+          </button>
+        </div>
       </div>
 
       {error && (

@@ -27,6 +27,7 @@ export const profilesApi = {
   update: (id, body) => api.put(`/profiles/${id}`, body),
   delete: (id) => api.del(`/profiles/${id}`),
   clone: (id) => api.post(`/profiles/${id}/clone`),
+  reset: (id) => api.post(`/profiles/${id}/reset`),
   preview: (id) => api.post(`/profiles/${id}/preview`),
 };
 

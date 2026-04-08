@@ -207,12 +207,11 @@ async def update_profile(
 ) -> dict:
     profile = await _get_profile_or_404(profile_id, db)
 
-    if profile.is_builtin:
-        raise HTTPException(status_code=403, detail="Cannot modify built-in profiles")
-
     if body.name is not None:
         profile.name = body.name
-        profile.slug = await _unique_slug(body.name, db)
+        # Preserve slug for built-in profiles (needed for reset-to-defaults)
+        if not profile.is_builtin:
+            profile.slug = await _unique_slug(body.name, db)
     if body.description is not None:
         profile.description = body.description
     if body.behavior_defaults is not None:
@@ -366,6 +365,25 @@ async def clone_profile(
 
     clone = await _get_profile_or_404(clone.id, db, eager=True)
     return {"data": ProfileRead.model_validate(clone).model_dump()}
+
+
+@router.post("/{profile_id}/reset", response_model=dict)
+async def reset_profile(
+    profile_id: UUID, db: AsyncSession = Depends(get_db)
+) -> dict:
+    """Reset a built-in profile to its original default values."""
+    from app.seed_data.runner import reset_profile_to_defaults
+
+    profile = await _get_profile_or_404(profile_id, db)
+
+    if not profile.is_builtin:
+        raise HTTPException(status_code=400, detail="Only built-in profiles can be reset")
+
+    await reset_profile_to_defaults(db, profile)
+    await db.commit()
+
+    profile = await _get_profile_or_404(profile_id, db, eager=True)
+    return {"data": ProfileRead.model_validate(profile).model_dump()}
 
 
 # ---------------------------------------------------------------------------

@@ -1,134 +1,70 @@
-# Session Handoff — Phase 7 Bug Fixes
+# Session Handoff — Ready for Phase 8
 
-## Current State (2026-04-07)
+## Current State (2026-04-08)
 
-Phases 7a-7b are **committed**. Phases 7c-7e have **uncommitted code** that mostly works but has two critical bugs in the seeded benchmark feature.
+All Phase 7 work is **committed** (phases 7a-7f). Uncommitted changes from this session need one final commit.
 
-### Uncommitted files:
-- `PROGRESS.md`
-- `backend/alembic/versions/007_benchmark_seed.py` (new)
-- `backend/app/engine/prompt_plan.py` (new)
-- `backend/app/engine/conversation.py`
-- `backend/app/engine/runner.py`
-- `backend/app/models/benchmark.py`
-- `backend/app/routers/benchmarks.py`
-- `backend/app/schemas/benchmark.py`
-- `frontend/src/App.jsx`
-- `frontend/src/api/client.js`
-- `frontend/src/pages/BenchmarkCompare.jsx` (new)
-- `frontend/src/pages/BenchmarkRun.jsx`
-- `frontend/src/pages/Benchmarks.jsx`
-- `frontend/src/stores/benchmarkStore.js`
-- `frontend/src/components/QualityFlagPill.jsx` (new)
-- `frontend/src/components/ResponseBrowser.jsx` (new)
+### Uncommitted changes:
+- `PROGRESS.md` — updated with all 7f work
+- `CLAUDE.md` — updated seeding docs, removed lens.bat references
+- `frontend/src/pages/Benchmarks.jsx` — seed InfoTip, auto-generated 4-digit seed
+- `frontend/src/pages/Profiles.jsx` — built-in profiles show Edit button
+- `frontend/src/pages/ProfileEditor.jsx` — save in header, Reset to Defaults for built-in
+- `frontend/src/pages/ScenarioEditor.jsx` — save button in header
+- `frontend/src/api/client.js` — added profilesApi.reset()
+- `backend/app/routers/profiles.py` — removed is_builtin 403 guard, added reset endpoint
+- `backend/app/seed_data/runner.py` — only-if-missing seeding, reset_profile_to_defaults()
+- `mock-llm/main.py` — respects max_tokens, returns finish_reason "length"
+- `lens.bat` — deleted
 
-### What was built in 7c-7e:
-- **7c: Response Browser** — Session-grouped conversation view with chat-style bubbles, markdown rendering (react-markdown + remark-gfm), ITL sparklines, profile filter, pagination
-- **7d: Export** — CSV/JSON download buttons on BenchmarkRun header
-- **7e: Comparison Mode** — "Compare Runs" button on Benchmarks list, guided selection UX, BenchmarkCompare page with Metrics tab (side-by-side stats, delta badges, profile comparison table) and Responses tab (side-by-side session browser)
-- **7e also added: Seeded Benchmarks** — seed input on Benchmarks page, `prompt_plan.py` generates deterministic prompt plans, stored as JSONB, used by runner
+### What was done this session:
+1. **Bug fixes (committed as bdd4d47):**
+   - Deterministic snapshot ordering for seeded benchmarks
+   - Seeded multi-turn conversation history accumulation  
+   - Request body mutation fix (stored snapshot, not live reference)
+   - Comparison page: per-side prompts for non-seeded runs
+   - maxTurns based on actual requests, not prompt plan
 
----
+2. **Phase 7f polish (committed as 2b90768):**
+   - Quality flag counts on Overview tab
+   - Mock server finish_reason "length" support
 
-## Bug 1: Seeded Prompt Plan Not Deterministic
-
-**Symptom:** Two benchmarks with same scenario + seed=42 produce DIFFERENT prompts and different turn counts.
-
-**Root Cause:** `_build_scenario_snapshot()` in `benchmarks.py:80-130` iterates SQLAlchemy relationships loaded via `selectinload`. None of these relationships have `order_by` defined:
-
-- `Scenario.profiles` (`models/scenario.py:47`)
-- `Profile.conversation_templates` (`models/profile.py:29`)
-- `ConversationTemplate.follow_ups` (`models/profile.py:57`)
-- `Profile.follow_up_prompts` (`models/profile.py:32`)
-- `Profile.template_variables` (`models/profile.py:35`)
-
-SQLAlchemy `selectinload` does NOT guarantee ordering. If templates come back as `[T1, T2]` in run A but `[T2, T1]` in run B, then `rng.choice(templates)` with the same seed picks a different template. This cascades through the entire prompt plan.
-
-**Fix:**
-1. Sort all lists in `_build_scenario_snapshot()` by stable keys (e.g., `str(profile.id)`, `str(t.id)`, `v.name`) before serializing to the snapshot dict
-2. Add `order_by` to the relationship definitions in the models as defense-in-depth
-
-**Files to modify:**
-- `backend/app/routers/benchmarks.py` — sort in `_build_scenario_snapshot()`
-- `backend/app/models/profile.py` — add `order_by` to 4 relationships
-- `backend/app/models/scenario.py` — add `order_by` to `Scenario.profiles`
+3. **Additional polish (uncommitted):**
+   - Seed input InfoTip tooltip
+   - Save buttons in Profile/Scenario editor headers
+   - Auto-generated 4-digit seeds (every run is reproducible)
+   - Built-in profiles are editable with Reset to Defaults
+   - Seed runner changed to only-if-missing (user edits survive restarts)
+   - lens.bat removed, docker compose commands documented directly
 
 ---
 
-## Bug 2: Seeded Multi-Turn Has No Conversation History
+## Next Up: Phase 8 — Load Curves & Breaking Point Detection
 
-**Symptom:** In seeded mode, each turn is sent standalone — the LLM never sees prior messages, making follow-ups like "Can you elaborate?" meaningless.
+From PROGRESS.md:
+- [ ] Load curve visualization in scenario builder
+- [ ] Step / ramp / spike / wave curve implementations
+- [ ] Breaking point auto-detection (latency spike, error threshold)
+- [ ] Breaking point marker on dashboard timeline
 
-**Current code** in `conversation.py:107-129`:
-```python
-async def _run_seeded(self) -> None:
-    prompts = self._config.seeded_prompts
-    for turn, prompt in enumerate(prompts):
-        messages = [{"role": "user", "content": prompt}]  # <-- No history!
-        result = await self._client.send(messages)
-```
+### Context:
+The scenario builder already has three test modes: Stress Test, Ramp Up, Breaking Point. The backend runner already implements stress and ramp modes. Breaking point mode exists but the auto-detection logic (latency spike, error threshold crossing) needs work. The frontend has no load curve visualization yet.
 
-**Fix:** Accumulate messages list like the non-seeded `run()` method does:
-```python
-async def _run_seeded(self) -> None:
-    prompts = self._config.seeded_prompts
-    messages: list[dict] = []
-    for turn, prompt in enumerate(prompts):
-        messages.append({"role": "user", "content": prompt})
-        result = await self._client.send(messages)
-        # ... record ...
-        if result.success and result.response_text:
-            messages.append({"role": "assistant", "content": result.response_text})
-```
-
-User prompts stay deterministic (pre-generated). LLM responses will differ between endpoints (expected — that's what we're comparing).
-
-**File to modify:** `backend/app/engine/conversation.py`
+### Deferred Polish (Phase 9):
+A visual polish audit was done this session. Key items identified:
+- Reusable Spinner component (6+ bare text loading states)
+- RequestLog empty state (currently returns null)
+- Silent API error handling across components
+- Chart empty states (LatencyTimeline, ThroughputChart)
+- Response truncation UX (no expand option)
+- Delete confirmation auto-dismiss
+- Success feedback toasts
 
 ---
 
-## Testing Plan (Run BEFORE Committing)
-
-### Test 1: Prompt Plan Determinism
-1. `lens up` to rebuild
-2. Run benchmark A: pick any scenario, any endpoint, seed=42
-3. Wait for completion
-4. Run benchmark B: same scenario, same endpoint, seed=42
-5. Compare prompt_plan in DB: `SELECT prompt_plan FROM benchmarks WHERE seed=42 ORDER BY created_at`
-6. **Expected:** Identical prompt_plan JSONB in both rows
-
-### Test 2: Multi-Turn Conversation History
-1. Run seeded benchmark with multi-turn profile (Casual User, 2-3 turns)
-2. Open Response Browser, expand a multi-turn session
-3. **Expected:** Follow-up responses are contextually relevant (not confused by lack of context)
-
-### Test 3: Comparison Page
-1. Go to Benchmarks list, click "Compare Runs", select two seed=42 runs
-2. **Expected:** Page loads, Metrics tab shows side-by-side stats with deltas
-3. Switch to Responses tab
-4. **Expected:** Matching user prompts, different LLM responses side by side
-
-### Test 4: Export
-1. On a completed benchmark, click Export CSV and Export JSON
-2. **Expected:** Files download correctly
-
-### Test 5: Response Browser (Single Run)
-1. Open completed benchmark, go to Responses tab
-2. Expand a session
-3. **Expected:** Chat-style view with markdown-rendered responses
-
----
-
-## Implementation Order
-1. Fix `_build_scenario_snapshot()` sorting (Bug 1) — 4 files
-2. Fix `_run_seeded()` conversation history (Bug 2) — 1 file
-3. `lens up` to rebuild
-4. Run Tests 1-5 with user confirmation
-5. Fix any issues found
-6. Commit 7c-7e
-7. Proceed to 7f (polish: quality flag counts on Overview tab, finish_reason verification)
-
----
-
-## Existing Plan File
-There is also a plan at `C:\Users\Maddab\.claude\plans\radiant-dreaming-gosling.md` with the same information in a slightly different format.
+## Key Architecture Notes
+- Backend engine code: `backend/app/engine/` (runner.py, conversation.py, llm_client.py, collector.py, prompt_plan.py)
+- Load config stored in scenario: `scenario.load_config` (test_mode, duration_seconds, ramp params, breaking_criteria)
+- Breaking criteria schema: `BreakingCriteria` in `backend/app/schemas/scenario.py`
+- Runner modes: `_run_stress()`, `_run_ramp()`, `_run_breaking_point()` in `runner.py`
+- Charts: `frontend/src/components/charts/` (LatencyTimeline, ThroughputChart, ErrorChart, ProfileBreakdown)
