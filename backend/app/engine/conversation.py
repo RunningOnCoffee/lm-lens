@@ -83,8 +83,8 @@ class ConversationSimulator:
 
             messages.append({"role": "user", "content": prompt})
 
-            # Send to LLM
-            result = await self._client.send(messages)
+            # Send to LLM (pass abort event so streaming can break early)
+            result = await self._client.send(messages, abort_event=self._abort)
 
             # Record metric
             await self._collector.record(
@@ -113,7 +113,7 @@ class ConversationSimulator:
                 return
 
             messages.append({"role": "user", "content": prompt})
-            result = await self._client.send(messages)
+            result = await self._client.send(messages, abort_event=self._abort)
 
             await self._collector.record(
                 result=result,

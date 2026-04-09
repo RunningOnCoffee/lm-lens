@@ -358,7 +358,7 @@ class FakeLLMClient:
         self._responses = responses or ["Fake response from the mock LLM"]
         self._idx = 0
 
-    async def send(self, messages: list[dict]) -> LLMRequestResult:
+    async def send(self, messages: list[dict], abort_event=None) -> LLMRequestResult:
         self.calls.append(list(messages))
         text = self._responses[min(self._idx, len(self._responses) - 1)]
         self._idx += 1

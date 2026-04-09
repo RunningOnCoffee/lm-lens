@@ -168,7 +168,7 @@ Identified but not yet implemented:
 - [x] Breaking point auto-detection (latency spike, error threshold, ITL)
 - [x] Breaking point details recorded in results_summary (elapsed, users, reason)
 - [x] Breaking point marker on dashboard timeline (red dashed line with label)
-- [ ] Quality-under-load correlation chart (quality flag rates overlaid on concurrency timeline)
+- [x] Quality-under-load correlation chart (quality flag rates overlaid on concurrency timeline)
 
 ## Phase 9: A/B Quality Comparison
 - [ ] Smart evaluation task sets (curated prompt sets to surface quality differences)

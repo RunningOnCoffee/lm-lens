@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from dataclasses import dataclass, field
@@ -95,12 +96,16 @@ class LLMClient:
             body["stop"] = stop
         return body
 
-    async def send(self, messages: list[dict]) -> LLMRequestResult:
+    async def send(
+        self,
+        messages: list[dict],
+        abort_event: asyncio.Event | None = None,
+    ) -> LLMRequestResult:
         body = self._build_body(messages)
         result = LLMRequestResult(request_body=body)
         try:
             if self._stream:
-                await self._send_streaming(body, result)
+                await self._send_streaming(body, result, abort_event)
             else:
                 await self._send_non_streaming(body, result)
         except httpx.TimeoutException as exc:
@@ -117,11 +122,17 @@ class LLMClient:
             result.error_detail = str(exc)
         return result
 
-    async def _send_streaming(self, body: dict, result: LLMRequestResult) -> None:
+    async def _send_streaming(
+        self,
+        body: dict,
+        result: LLMRequestResult,
+        abort_event: asyncio.Event | None = None,
+    ) -> None:
         t0 = time.perf_counter()
         first_token_received = False
         prev_token_time: float | None = None
         chunks: list[str] = []
+        aborted = False
 
         async with self._client.stream("POST", self._url, json=body) as resp:
             result.http_status = resp.status_code
@@ -136,6 +147,12 @@ class LLMClient:
                 return
 
             async for line in resp.aiter_lines():
+                # Check abort between chunks so in-flight requests
+                # don't block the benchmark from finishing
+                if abort_event is not None and abort_event.is_set():
+                    aborted = True
+                    break
+
                 if not line.startswith("data: "):
                     continue
 
@@ -187,6 +204,9 @@ class LLMClient:
         result.tgt_ms = (time.perf_counter() - t0) * 1000
         result.response_text = "".join(chunks)
         result.success = True
+
+        if aborted:
+            result.finish_reason = "aborted"
 
         # Fill in token estimates if server didn't report usage
         if result.input_tokens is None:

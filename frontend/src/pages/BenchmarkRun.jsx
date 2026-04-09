@@ -9,6 +9,7 @@ import LatencyTimeline from '../components/charts/LatencyTimeline';
 import ThroughputChart from '../components/charts/ThroughputChart';
 import ErrorChart from '../components/charts/ErrorChart';
 import ProfileBreakdown from '../components/charts/ProfileBreakdown';
+import QualityLoadChart from '../components/charts/QualityLoadChart';
 import RequestLog from '../components/RequestLog';
 import ResponseBrowser from '../components/ResponseBrowser';
 import QualityFlagPill from '../components/QualityFlagPill';
@@ -210,6 +211,7 @@ export default function BenchmarkRun() {
                 <ErrorChart snapshots={snapshots} />
                 <ProfileBreakdown snapshots={snapshots} />
               </div>
+              <QualityLoadChart snapshots={snapshots} />
             </div>
           )}
           {snapshots.length <= 1 && (
@@ -253,6 +255,7 @@ export default function BenchmarkRun() {
                     <ErrorChart snapshots={snapshots} />
                     <ProfileBreakdown snapshots={snapshots} />
                   </div>
+                  <QualityLoadChart snapshots={snapshots} />
                 </div>
               )}
               {snapshots.length <= 1 && !hasSummary && (

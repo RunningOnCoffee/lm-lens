@@ -394,8 +394,8 @@ class BenchmarkRunner:
         self._abort_event.set()
 
     @staticmethod
-    async def _cancel_tasks(tasks: list[asyncio.Task], grace_seconds: float = 3.0) -> None:
-        """Wait briefly for tasks to finish, then cancel any still running."""
+    async def _cancel_tasks(tasks: list[asyncio.Task], grace_seconds: float = 10.0) -> None:
+        """Wait for tasks to finish (abort event breaks streaming), then cancel any still running."""
         if not tasks:
             return
         done, pending = await asyncio.wait(tasks, timeout=grace_seconds)
