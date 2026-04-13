@@ -74,6 +74,7 @@ class BenchmarkRequest(Base):
     request_body: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     response_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     quality_flags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    quality_scores: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )

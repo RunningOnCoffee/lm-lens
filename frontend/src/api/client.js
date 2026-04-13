@@ -83,6 +83,7 @@ export const benchmarksApi = {
     return api.get(`/benchmarks/${id}/histogram${qs ? `?${qs}` : ''}`);
   },
   profileStats: (id) => api.get(`/benchmarks/${id}/profile-stats`),
+  qualityScores: (id) => api.get(`/benchmarks/${id}/quality-scores`),
   compare: (idA, idB) => api.get(`/benchmarks/compare?ids=${idA},${idB}`),
   compareSession: (idA, idB, sessionIndex) => api.get(`/benchmarks/compare/sessions?ids=${idA},${idB}&session_index=${sessionIndex}`),
   exportJSON: async (id) => {

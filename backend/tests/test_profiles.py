@@ -1,5 +1,7 @@
 import pytest
 
+from tests.conftest import track_created
+
 
 @pytest.mark.asyncio
 async def test_list_profiles(client):
@@ -74,6 +76,7 @@ async def test_create_profile(client):
     resp = await client.post("/api/v1/profiles", json=body)
     assert resp.status_code == 201
     data = resp.json()["data"]
+    track_created("profiles", data["id"])
     assert data["name"] == "Test Profile"
     assert data["is_builtin"] is False
     assert data["slug"].startswith("test-profile")
@@ -94,6 +97,7 @@ async def test_update_profile(client):
     resp = await client.post("/api/v1/profiles", json=create_body)
     assert resp.status_code == 201
     profile_id = resp.json()["data"]["id"]
+    track_created("profiles", profile_id)
 
     # Update name and description
     update_body = {
@@ -130,6 +134,7 @@ async def test_delete_profile(client):
         json={"name": "To Delete", "description": "Temporary"},
     )
     profile_id = resp.json()["data"]["id"]
+    track_created("profiles", profile_id)
 
     resp = await client.delete(f"/api/v1/profiles/{profile_id}")
     assert resp.status_code == 200
@@ -164,6 +169,7 @@ async def test_clone_profile(client):
     resp = await client.post(f"/api/v1/profiles/{source_id}/clone")
     assert resp.status_code == 201
     clone = resp.json()["data"]
+    track_created("profiles", clone["id"])
     import re
     base_name = source_full["name"]
     assert re.match(rf"^{re.escape(base_name)} \(\d+\)$", clone["name"])
@@ -177,12 +183,14 @@ async def test_clone_profile(client):
     resp2 = await client.post(f"/api/v1/profiles/{source_id}/clone")
     assert resp2.status_code == 201
     clone2 = resp2.json()["data"]
+    track_created("profiles", clone2["id"])
     assert clone2["name"] == f"{base_name} ({first_num + 1})"
 
     # Clone the clone — should still increment from base name
     resp3 = await client.post(f"/api/v1/profiles/{clone['id']}/clone")
     assert resp3.status_code == 201
     clone3 = resp3.json()["data"]
+    track_created("profiles", clone3["id"])
     assert clone3["name"] == f"{base_name} ({first_num + 2})"
 
 
@@ -216,6 +224,7 @@ async def test_preview_empty_profile(client):
         json={"name": "Empty Preview", "description": "No templates"},
     )
     profile_id = resp.json()["data"]["id"]
+    track_created("profiles", profile_id)
 
     resp = await client.post(f"/api/v1/profiles/{profile_id}/preview")
     assert resp.status_code == 200
@@ -239,6 +248,7 @@ async def test_update_profile_templates(client):
         },
     )
     profile_id = resp.json()["data"]["id"]
+    track_created("profiles", profile_id)
     assert len(resp.json()["data"]["conversation_templates"]) == 1
 
     # Update with two different templates

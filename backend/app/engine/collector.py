@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from uuid import UUID
 
 from app.engine.llm_client import LLMRequestResult
+from app.engine.quality_scorer import compute_quality_scores
 from app.models.benchmark import BenchmarkRequest
 
 logger = logging.getLogger(__name__)
@@ -286,9 +287,22 @@ class MetricCollector:
             model_reported=result.model_reported,
             request_body=result.request_body,
             response_text=result.response_text or None,
-            quality_flags=_compute_quality_flags(result) if result.success else None,
+            quality_flags=(
+                _compute_quality_flags(result)
+                if result.success and result.finish_reason != "aborted"
+                else None
+            ),
+            quality_scores=None,  # set below after flags are known
             created_at=datetime.now(timezone.utc),
         )
+
+        # Compute quality dimension scores from flags (skip aborted requests)
+        if result.finish_reason != "aborted" and (
+            row.quality_flags is not None or (result.success and row.quality_flags is None)
+        ):
+            # Successful, non-aborted request: score it (None flags means empty list = perfect)
+            flags = row.quality_flags if row.quality_flags else []
+            row.quality_scores = compute_quality_scores(flags)
 
         has_quality_flags = bool(row.quality_flags)
 

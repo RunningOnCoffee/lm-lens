@@ -4,6 +4,8 @@ import asyncio
 
 import pytest
 
+from tests.conftest import track_created
+
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -23,7 +25,9 @@ async def _create_profile(client, name="Test Profile"):
     }
     resp = await client.post("/api/v1/profiles", json=body)
     assert resp.status_code == 201
-    return resp.json()["data"]["id"]
+    id_ = resp.json()["data"]["id"]
+    track_created("profiles", id_)
+    return id_
 
 
 async def _create_endpoint(client, name="Test Endpoint"):
@@ -35,7 +39,9 @@ async def _create_endpoint(client, name="Test Endpoint"):
     }
     resp = await client.post("/api/v1/endpoints", json=body)
     assert resp.status_code == 201
-    return resp.json()["data"]["id"]
+    id_ = resp.json()["data"]["id"]
+    track_created("endpoints", id_)
+    return id_
 
 
 async def _create_scenario(client, profile_ids, **overrides):
@@ -50,7 +56,9 @@ async def _create_scenario(client, profile_ids, **overrides):
     }
     resp = await client.post("/api/v1/scenarios", json=body)
     assert resp.status_code == 201
-    return resp.json()["data"]["id"]
+    id_ = resp.json()["data"]["id"]
+    track_created("scenarios", id_)
+    return id_
 
 
 async def _create_benchmark(client, name_suffix=""):
@@ -65,6 +73,7 @@ async def _create_benchmark(client, name_suffix=""):
     })
     assert resp.status_code == 201
     bench_id = resp.json()["data"]["id"]
+    track_created("benchmarks", bench_id)
     return bench_id, scenario_id, endpoint_id, profile_id
 
 
@@ -297,3 +306,38 @@ async def test_export_not_found(client):
     """GET /export/{id} with nonexistent ID returns 404."""
     resp = await client.get("/api/v1/benchmarks/export/00000000-0000-0000-0000-000000000000?format=json")
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Quality Scores Tests
+# ---------------------------------------------------------------------------
+
+async def test_quality_scores_empty(client):
+    """GET /quality-scores returns null overall for benchmark with no requests."""
+    bench_id, _, _, _ = await _create_benchmark(client, "QSEmpty")
+
+    resp = await client.get(f"/api/v1/benchmarks/{bench_id}/quality-scores")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert data["overall"] is None
+    assert data["by_profile"] == {}
+    assert data["scored_requests"] == 0
+
+
+async def test_quality_scores_not_found(client):
+    """GET /quality-scores with nonexistent ID returns 404."""
+    resp = await client.get("/api/v1/benchmarks/00000000-0000-0000-0000-000000000000/quality-scores")
+    assert resp.status_code == 404
+
+
+async def test_compare_includes_quality_comparison(client):
+    """GET /compare response includes quality_comparison field."""
+    bench_a, _, _, _ = await _create_benchmark(client, "QCmpA")
+    bench_b, _, _, _ = await _create_benchmark(client, "QCmpB")
+
+    resp = await client.get(f"/api/v1/benchmarks/compare?ids={bench_a},{bench_b}")
+    assert resp.status_code == 200
+    data = resp.json()["data"]
+    assert "quality_comparison" in data
+    # New benchmarks have no results_summary, so quality_comparison is None
+    assert data["quality_comparison"] is None

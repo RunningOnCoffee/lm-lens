@@ -171,11 +171,19 @@ Identified but not yet implemented:
 - [x] Quality-under-load correlation chart (quality flag rates overlaid on concurrency timeline)
 
 ## Phase 9: A/B Quality Comparison
-- [ ] Smart evaluation task sets (curated prompt sets to surface quality differences)
-- [ ] Heuristic scoring mechanics (structural checks, consistency, completeness)
-- [ ] Enhanced comparison mode with per-dimension scores and overall winner
-- [ ] Side-by-side quality flag analysis
-- [ ] Aggregate quality scorecard
+- [x] Quality scoring engine (4 dimensions: completeness, compliance, coherence, safety)
+- [x] Per-request quality_scores JSONB column + Alembic migration 009
+- [x] Quality scores API endpoint (GET /benchmarks/{id}/quality-scores)
+- [x] Enhanced /compare endpoint with quality_comparison (per-dimension delta + overall winner)
+- [x] Quality Scorecard UI on Overview tab (overall score, dimension bars, flag distribution, per-profile table)
+- [x] Quality comparison UI (winner banner, dimension side-by-side bars, flag diff)
+- [x] Aborted requests excluded from quality scoring
+- [x] Profile refinement: reduced from 11 to 4 built-in profiles (Casual User, Power User, Programmer, Data Analyst)
+- [x] Programmer profile: real code snippets replacing $CODE_BLOCK placeholder
+- [x] Test cleanup: ID-tracking in conftest.py, no leftover data
+
+## Phase 9 Bug Fixes
+- [x] Seeded benchmarks: looping users now get varied prompts after first seeded session (templates + variables populated on seeded SessionConfig, seeded_prompts cleared after first run)
 
 ## Phase 10: Polish & Documentation
 - [ ] Visual polish items from audit (loading states, empty states, error handling)

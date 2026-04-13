@@ -71,6 +71,7 @@ class BenchmarkRequestRead(BaseModel):
     request_body: dict | None = None
     response_text: str | None = None
     quality_flags: list[str] | None = None
+    quality_scores: dict[str, float] | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -107,6 +107,11 @@ export default function BenchmarkCompare() {
         <RunInfoCard label="B" benchmark={benchB} endpoint={epB} />
       </div>
 
+      {/* Quality winner banner */}
+      {data.quality_comparison && (
+        <QualityWinnerBanner comparison={data.quality_comparison} epA={epA} epB={epB} />
+      )}
+
       <TabBar
         tabs={[
           { id: 'metrics', label: 'Metrics' },
@@ -153,6 +158,21 @@ export default function BenchmarkCompare() {
               </table>
             </div>
           </div>
+
+          {/* Quality dimension comparison */}
+          {data.quality_comparison && (
+            <QualityDimensionComparison comparison={data.quality_comparison} />
+          )}
+
+          {/* Quality flag diff */}
+          {(sumA.quality_flags || sumB.quality_flags) && (
+            <QualityFlagDiff
+              flagsA={sumA.quality_flags || {}}
+              flagsB={sumB.quality_flags || {}}
+              totalA={sumA.successful_requests || 0}
+              totalB={sumB.successful_requests || 0}
+            />
+          )}
 
           {/* Per-profile comparison */}
           {profilesA && profilesB && (
@@ -517,6 +537,172 @@ function ResponsePanel({ label, color, request, userPrompt }) {
       ) : (
         <div className="text-xs text-gray-600 italic">Empty response</div>
       )}
+    </div>
+  );
+}
+
+// --- Quality comparison components ---
+
+const QUALITY_DIMENSIONS = ['completeness', 'compliance', 'coherence', 'safety'];
+const QUALITY_LABELS = {
+  completeness: 'Completeness',
+  compliance: 'Compliance',
+  coherence: 'Coherence',
+  safety: 'Safety',
+  overall: 'Overall',
+};
+
+function QualityWinnerBanner({ comparison, epA, epB }) {
+  const { winner, dimensions } = comparison;
+  const overall = dimensions.overall;
+  const scoreA = Math.round((overall?.a ?? 0) * 100);
+  const scoreB = Math.round((overall?.b ?? 0) * 100);
+
+  if (winner === 'tie') {
+    return (
+      <div className="bg-surface-800 border border-surface-600 rounded-xl px-4 py-3 mb-4 flex items-center justify-center gap-3">
+        <span className="text-xs text-gray-400">Quality:</span>
+        <span className="text-sm font-medium text-gray-300">Tie</span>
+        <span className="text-xs font-mono text-gray-500">{scoreA}% vs {scoreB}%</span>
+      </div>
+    );
+  }
+
+  const winnerLabel = winner === 'a' ? (epA.name || 'Run A') : (epB.name || 'Run B');
+  const winnerColor = winner === 'a' ? 'accent' : 'warn';
+  const winnerScore = winner === 'a' ? scoreA : scoreB;
+  const loserScore = winner === 'a' ? scoreB : scoreA;
+
+  return (
+    <div className={`bg-surface-800 border border-${winnerColor}/30 rounded-xl px-4 py-3 mb-4 flex items-center gap-3`}>
+      <span className="text-xs text-gray-400">Quality Winner:</span>
+      <span className={`text-sm font-semibold px-2 py-0.5 rounded bg-${winnerColor}/20 text-${winnerColor}`}>
+        {winner === 'a' ? 'A' : 'B'}
+      </span>
+      <span className="text-sm font-medium text-gray-200">{winnerLabel}</span>
+      <span className="text-xs font-mono text-gray-500 ml-auto">
+        {winnerScore}% vs {loserScore}%
+      </span>
+    </div>
+  );
+}
+
+function QualityDimensionComparison({ comparison }) {
+  const { dimensions } = comparison;
+
+  return (
+    <div className="bg-surface-800 border border-surface-600 rounded-xl p-4 mb-4">
+      <h2 className="font-heading text-sm font-semibold text-gray-300 mb-4">
+        Quality Dimensions
+        <span className="ml-2">
+          <InfoTip text="Per-dimension quality scores comparing both runs. Scores are 0-100% based on heuristic checks of LLM responses." />
+        </span>
+      </h2>
+      <div className="space-y-3">
+        {[...QUALITY_DIMENSIONS, 'overall'].map((dim) => {
+          const d = dimensions[dim];
+          if (!d) return null;
+          const aVal = Math.round((d.a ?? 0) * 100);
+          const bVal = Math.round((d.b ?? 0) * 100);
+          const isOverall = dim === 'overall';
+
+          return (
+            <div key={dim} className={`${isOverall ? 'pt-3 border-t border-surface-600' : ''}`}>
+              <div className="flex items-center gap-2 mb-1">
+                <span className={`w-28 text-[11px] ${isOverall ? 'font-semibold text-gray-300' : 'text-gray-400'}`}>
+                  {QUALITY_LABELS[dim]}
+                </span>
+                <div className="flex-1 flex items-center gap-1">
+                  {/* Bar A */}
+                  <div className="flex-1 h-3 bg-surface-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-accent transition-all duration-500"
+                      style={{ width: `${aVal}%`, opacity: aVal > 0 ? 0.8 : 0 }}
+                    />
+                  </div>
+                  {/* Bar B */}
+                  <div className="flex-1 h-3 bg-surface-700 rounded-full overflow-hidden">
+                    <div
+                      className="h-full rounded-full bg-warn transition-all duration-500"
+                      style={{ width: `${bVal}%`, opacity: bVal > 0 ? 0.8 : 0 }}
+                    />
+                  </div>
+                </div>
+                <span className="w-12 text-right text-[11px] font-mono text-accent/70">{aVal}%</span>
+                <span className="w-12 text-right text-[11px] font-mono text-warn/70">{bVal}%</span>
+                <span className="w-14 text-right">
+                  {d.delta !== 0 && (
+                    <span className={`text-[10px] font-mono ${d.delta > 0 ? 'text-green-400' : d.delta < 0 ? 'text-danger' : 'text-gray-500'}`}>
+                      {d.delta > 0 ? '+' : ''}{Math.round(d.delta * 100)}
+                    </span>
+                  )}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex items-center gap-4 mt-3 pt-2 border-t border-surface-600/50">
+        <span className="text-[10px] text-accent/50 flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-accent/80 inline-block" /> Run A
+        </span>
+        <span className="text-[10px] text-warn/50 flex items-center gap-1">
+          <span className="w-2 h-2 rounded-full bg-warn/80 inline-block" /> Run B
+        </span>
+        <span className="text-[10px] text-gray-600 ml-auto">Delta: A relative to B</span>
+      </div>
+    </div>
+  );
+}
+
+function QualityFlagDiff({ flagsA, flagsB, totalA, totalB }) {
+  const allFlags = [...new Set([...Object.keys(flagsA), ...Object.keys(flagsB)])];
+  if (allFlags.length === 0) return null;
+
+  return (
+    <div className="bg-surface-800 border border-surface-600 rounded-xl p-4 mb-4">
+      <h2 className="font-heading text-sm font-semibold text-gray-300 mb-4">Quality Flag Comparison</h2>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs font-mono">
+          <thead>
+            <tr className="border-b border-surface-600">
+              <th className="text-left py-2 px-2 text-gray-500 font-semibold">Flag</th>
+              <th className="text-right py-2 px-2 text-accent/70 font-semibold">A Count</th>
+              <th className="text-right py-2 px-2 text-accent/70 font-semibold">A %</th>
+              <th className="text-right py-2 px-2 text-warn/70 font-semibold">B Count</th>
+              <th className="text-right py-2 px-2 text-warn/70 font-semibold">B %</th>
+              <th className="text-right py-2 px-2 text-gray-500 font-semibold">Change</th>
+            </tr>
+          </thead>
+          <tbody>
+            {allFlags.sort().map((flag) => {
+              const countA = flagsA[flag] || 0;
+              const countB = flagsB[flag] || 0;
+              const pctA = totalA > 0 ? (countA / totalA * 100) : 0;
+              const pctB = totalB > 0 ? (countB / totalB * 100) : 0;
+              const diff = countA - countB;
+
+              return (
+                <tr key={flag} className="border-b border-surface-600/50 last:border-b-0">
+                  <td className="py-2 px-2"><QualityFlagPill flag={flag} /></td>
+                  <td className="text-right py-2 px-2 text-gray-300">{countA}</td>
+                  <td className="text-right py-2 px-2 text-gray-500">{pctA.toFixed(1)}%</td>
+                  <td className="text-right py-2 px-2 text-gray-300">{countB}</td>
+                  <td className="text-right py-2 px-2 text-gray-500">{pctB.toFixed(1)}%</td>
+                  <td className="text-right py-2 px-2">
+                    {diff !== 0 && (
+                      <span className={`text-[10px] ${diff < 0 ? 'text-green-400' : 'text-danger'}`}>
+                        {diff > 0 ? '+' : ''}{diff}
+                      </span>
+                    )}
+                    {diff === 0 && <span className="text-gray-600">=</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
     </div>
   );
 }

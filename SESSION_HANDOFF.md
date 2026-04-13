@@ -1,102 +1,89 @@
-# Session Handoff — Phase 8 In Progress
+# Session Handoff — Phase 9 Complete + Bug Fix
 
-## Current State (2026-04-08)
+## Current State (2026-04-13)
 
-Phase 8 is **mostly complete** — only 8e remains. Everything below needs one commit.
+Phase 9 (A/B Quality Comparison) is **complete and committed**. Profile refinement is **complete**. Seeded prompt variety bug is **fixed**. 129 tests passing.
 
-### Phase 8 completed sub-phases:
+### What was done this session:
 
-**8a: Load Curve Engine (Backend)**
-- New `backend/app/engine/load_curves.py` — 4 curve types: Step, Linear, Spike, Wave
-- Each has `target_users(elapsed, total_users, duration) -> int`
-- `create_curve(load_config) -> LoadCurve` factory
-- `LoadConfig` schema extended: `load_curve`, `spike_at_pct`, `spike_duration_seconds`, `wave_period_seconds`
-- Runner refactored: `_run_ramp` and `_run_breaking_point` delegate to `_run_with_curve()`
-- New `_run_curve_user()` — voluntarily exits when curve reduces target count
-- `_check_breaking()` now returns reason string (ttft/error_rate/itl) instead of bool
-- Breaking point details saved to `results_summary.breaking_point`
-- 24 tests for curves in `tests/test_load_curves.py`
+**Phase 9a: Quality Scoring Engine**
+- New `backend/app/engine/quality_scorer.py` — computes per-request dimension scores from quality flags
+- 4 dimensions: completeness (30%), compliance (30%), coherence (20%), safety (20%)
+- Flag-to-penalty mapping: empty→completeness -1.0, truncated→-0.5, invalid_json→compliance -1.0, etc.
+- Per-request scores stored in new `quality_scores` JSONB column (migration `009_quality_scores.py`)
+- Scoring integrated into `collector.py` at write time
 
-**8b: Load Curve Preview (Frontend)**
-- New `frontend/src/components/LoadCurvePreview.jsx` — Recharts AreaChart mirroring backend formulas
-- ScenarioEditor: 4-button curve selector (step/linear/spike/wave) for ramp/breaking_point modes
-- Conditional parameter inputs per curve type
-- Live preview chart updates reactively
+**Phase 9b: Quality Scores API + Aggregation**
+- `GET /benchmarks/{id}/quality-scores` — returns overall scores, per-profile breakdown, flag distribution
+- `aggregate_quality_scores()` averages dimension scores across requests
+- Enhanced `/compare` endpoint with quality_comparison (per-dimension a/b/delta, overall winner)
 
-**8c: Enhanced Quality Flags (Backend)**
-- 4 new quality flag detectors in `collector.py`:
-  - `invalid_json` — prompt asks for JSON, response isn't valid JSON
-  - `format_noncompliant` — prompt asks for bullet list/code block/table, response lacks markers
-  - `length_noncompliant` — prompt specifies sentence/word count, response deviates >3x or <0.3x
-  - `wrong_language` — Unicode script mismatch between prompt and response
-- Helper functions: `_extract_prompt_text`, `_check_json_validity`, `_check_format_compliance`, `_check_length_compliance`, `_check_language_match`
-- `QualityFlagPill.jsx` updated with 4 new flag colors/labels
-- "Quality Flag Tester" custom profile created via API (prompts designed to test all flags)
-- 13 new tests in `test_engine.py`
-- Note: flags are prompt-driven (analyze the prompt text for format requests). They only fire when profiles contain explicit format instructions AND the LLM fails to follow them.
+**Phase 9c: Quality Scorecard UI**
+- New `frontend/src/components/QualityScorecard.jsx` — overall score, dimension bars, flag distribution, per-profile table
+- Integrated into BenchmarkRun Overview tab
 
-**8d: Breaking Point Marker + Quality in Snapshots**
-- `BenchmarkSnapshot` model: added `quality_flag_count` column
-- Migration `008_snapshot_quality.py`
-- `MetricCollector`: tracks `_window_quality_flag_count` and `_total_quality_flagged`
-- `take_window()` now returns 4 values: results, profiles, turns, qf_count
-- `SnapshotGenerator`: passes quality flag count to snapshot, broadcasts via WebSocket
-- `BenchmarkSnapshotRead` schema: includes `quality_flag_count`
-- `LatencyTimeline.jsx`: accepts `breakingPoint` prop, renders red dashed ReferenceLine with label
-- `BenchmarkRun.jsx`: passes `summary.breaking_point` to LatencyTimeline
-- Quality flags are observational only — removed from breaking criteria (user decision: flags are for post-run analysis, not failure criteria)
+**Phase 9d: Quality Comparison UI**
+- QualityWinnerBanner, QualityDimensionComparison, QualityFlagDiff components in BenchmarkCompare.jsx
+- Side-by-side bars (cyan=A, amber=B), delta values, flag count comparison
 
-### What still needs doing:
+**Aborted Requests Excluded from Scoring**
+- Requests with `finish_reason="aborted"` skip quality flag computation and quality scoring entirely
+- They get `quality_flags=None` and `quality_scores=None`, excluded from all aggregation
 
-**8e: Quality-Under-Load Correlation Chart**
-- New `frontend/src/components/charts/QualityLoadChart.jsx`
-- X-axis: time (or active_users), Y-axis: quality flag rate %
-- Data source: snapshots have `quality_flag_count`, `completed_requests`, `active_users`
-- Integrate into BenchmarkRun page (Overview tab, below existing charts)
-- Only show if any quality flags exist
+**Built-in Profile Refinement**
+- Reduced from 11 profiles to 4: Casual User, Power User/Researcher, Programmer, Data Analyst
+- Programmer: fixed `$CODE_BLOCK` variable, added 6 real code snippets (86-97 lines each)
+- Casual User: added opinion and trivia templates, expanded variables
+- Power User: added strategic-assessment template, more follow-ups
+- Data Analyst: added metrics-design and statistical-analysis templates
 
-### Also fixed this session:
-- `test_update_builtin_profile_fails` renamed to `test_update_builtin_profile_allowed` (Phase 7f made built-in profiles editable)
-- `test_collector_record_and_window` updated for 4-value `take_window()` return
+**Bug Fix: Seeded Prompt Variety**
+- Seeded benchmarks were sending the same prompt every loop iteration in stress mode
+- Root cause: `_build_seeded_sessions()` didn't populate templates/variables, and `seeded_prompts` was never cleared after first use
+- Fix: seeded SessionConfigs now carry full template/variable data; `seeded_prompts` cleared after first session so subsequent loops use random selection
+- Applies to both `_run_user` (stress) and `_run_curve_user` (ramp/breaking point)
+
+**Test Cleanup**
+- Tests no longer leave data in the DB — ID-tracking approach in `conftest.py`
+
+### TODO for next session:
+- Phase 10: Polish & Documentation
+- Quality scoring is heuristic-only — LLM-as-Judge is in the roadmap for real quality evaluation
 
 ---
 
-## Key Files Modified This Session
+## Key Files Changed
 
-### Backend
-- `backend/app/engine/load_curves.py` — NEW: load curve implementations
-- `backend/app/engine/runner.py` — refactored ramp/breaking_point, _run_with_curve, _run_curve_user
-- `backend/app/engine/collector.py` — 4 new quality detectors, quality flag count tracking
-- `backend/app/engine/snapshots.py` — quality_flag_count in snapshots + broadcast
-- `backend/app/schemas/scenario.py` — LoadConfig extended with curve fields
-- `backend/app/schemas/benchmark.py` — BenchmarkSnapshotRead + quality_flag_count
-- `backend/app/models/benchmark.py` — BenchmarkSnapshot + quality_flag_count column
-- `backend/alembic/versions/008_snapshot_quality.py` — NEW: migration
-- `backend/tests/test_load_curves.py` — NEW: 24 tests
-- `backend/tests/test_engine.py` — 13 new quality flag tests, fixed 2 existing tests
-- `backend/tests/test_profiles.py` — fixed stale test
-
-### Frontend
-- `frontend/src/components/LoadCurvePreview.jsx` — NEW: curve preview chart
-- `frontend/src/components/QualityFlagPill.jsx` — 4 new flag styles/labels
-- `frontend/src/components/charts/LatencyTimeline.jsx` — breaking point ReferenceLine
-- `frontend/src/pages/ScenarioEditor.jsx` — curve selector, preview, cleaned up breaking criteria
-- `frontend/src/pages/BenchmarkRun.jsx` — passes breakingPoint prop
-
-### Other
-- `PROGRESS.md` — updated Phase 8 items, reorganized Phase 9/10
+| File | What |
+|------|------|
+| `backend/app/engine/quality_scorer.py` | NEW — scoring engine |
+| `backend/app/engine/collector.py` | Quality scoring at write time, abort exclusion |
+| `backend/app/engine/runner.py` | Seeded session bug fix, quality aggregation in summary |
+| `backend/app/models/benchmark.py` | `quality_scores` JSONB column |
+| `backend/app/schemas/benchmark.py` | `quality_scores` in response schema |
+| `backend/app/routers/benchmarks.py` | `/quality-scores` endpoint, enhanced `/compare` |
+| `backend/app/seed_data/profiles.py` | 4 refined profiles with real code snippets |
+| `backend/alembic/versions/009_quality_scores.py` | Migration |
+| `backend/tests/conftest.py` | ID-tracking cleanup |
+| `backend/tests/test_benchmarks.py` | Quality score tests + track_created |
+| `backend/tests/test_quality_scorer.py` | 16 scorer unit tests |
+| `frontend/src/components/QualityScorecard.jsx` | NEW — scorecard widget |
+| `frontend/src/pages/BenchmarkRun.jsx` | Scorecard integration |
+| `frontend/src/pages/BenchmarkCompare.jsx` | Quality comparison UI |
+| `frontend/src/api/client.js` | `qualityScores()` API call |
 
 ---
-
-## Architecture Notes for 8e
-
-The quality-under-load chart needs:
-- **Live mode**: snapshots from WebSocket contain `quality_flag_count` per second and `active_users`
-- **Historical mode**: GET /benchmarks/{id}/snapshots returns `quality_flag_count` per snapshot
-- Compute rate: `quality_flag_count / (completed_requests_delta)` per snapshot interval
-- Consider cumulative rate: `quality_flag_total / completed_requests` for smoother curve
-- The `quality_flag_total` field is broadcast via WebSocket but NOT stored in DB (it's a running counter on the collector)
-- For historical, you can derive cumulative from summing snapshot `quality_flag_count` values
 
 ## Test Suite
-110 tests passing (24 load curves + 13 new quality flags + 73 existing)
+129 tests passing (16 quality scorer + 3 quality API + 110 existing)
+
+## User's Hardware Setup
+- Development machine: Windows 11 Pro
+- Inference machine: NVIDIA DGX Spark (Grace Blackwell GPU) at 192.168.178.189
+- llama.cpp on port 8080 (Qwen3-Coder — very slow, 55s TTFT)
+- vLLM on port 8000
+
+## Endpoints configured in LM Lens:
+- "DGX Spark - Gemma4" → http://192.168.178.189:8000
+- "DGX Spark - Qwen3-Coder-Next - llama.cpp" → http://192.168.178.189:8080
+- "Mock LLM" → http://lm-lens-mock:8000

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session, get_db
+from app.engine.quality_scorer import aggregate_quality_scores
 from app.engine.runner import BenchmarkRunner, get_active_runner
 from app.engine.snapshots import percentile, ws_manager
 from app.models.benchmark import Benchmark, BenchmarkRequest, BenchmarkSnapshot
@@ -333,7 +334,35 @@ async def compare_benchmarks(
         for b, ep in [(bench_a, ep_snap_a), (bench_b, ep_snap_b)]
     ]
 
-    return {"data": {"benchmarks": benchmarks}}
+    # Quality score comparison
+    quality_comparison = None
+    qs_a = (bench_a.results_summary or {}).get("quality_scores")
+    qs_b = (bench_b.results_summary or {}).get("quality_scores")
+    if qs_a and qs_b:
+        dimensions = ["completeness", "compliance", "coherence", "safety", "overall"]
+        deltas = {}
+        for dim in dimensions:
+            val_a = qs_a.get(dim, 0)
+            val_b = qs_b.get(dim, 0)
+            deltas[dim] = {
+                "a": val_a,
+                "b": val_b,
+                "delta": round(val_a - val_b, 4),
+            }
+
+        # Determine overall winner
+        overall_a = qs_a.get("overall", 0)
+        overall_b = qs_b.get("overall", 0)
+        if abs(overall_a - overall_b) < 0.01:
+            winner = "tie"
+        elif overall_a > overall_b:
+            winner = "a"
+        else:
+            winner = "b"
+
+        quality_comparison = {"dimensions": deltas, "winner": winner}
+
+    return {"data": {"benchmarks": benchmarks, "quality_comparison": quality_comparison}}
 
 
 @router.get("/compare/sessions")
@@ -799,6 +828,73 @@ async def get_profile_stats(benchmark_id: UUID, db: AsyncSession = Depends(get_d
         ).model_dump())
 
     return {"data": data}
+
+
+@router.get("/{benchmark_id}/quality-scores")
+async def get_quality_scores(benchmark_id: UUID, db: AsyncSession = Depends(get_db)):
+    """Get aggregated quality dimension scores for a benchmark."""
+    benchmark = await _get_benchmark_or_404(benchmark_id, db)
+    profile_names = _profile_name_map(benchmark)
+
+    result = await db.execute(
+        select(
+            BenchmarkRequest.profile_id,
+            BenchmarkRequest.quality_scores,
+            BenchmarkRequest.quality_flags,
+        )
+        .where(
+            BenchmarkRequest.benchmark_id == benchmark_id,
+            BenchmarkRequest.error_type.is_(None),
+        )
+    )
+    rows = result.all()
+
+    if not rows:
+        return {"data": {"overall": None, "by_profile": {}, "flag_distribution": {}, "scored_requests": 0}}
+
+    # Aggregate overall scores
+    all_scores = [r.quality_scores for r in rows if r.quality_scores]
+    overall = aggregate_quality_scores(all_scores) if all_scores else None
+
+    # Per-profile scores
+    from collections import defaultdict
+    profile_scores_map: dict[str, list[dict]] = defaultdict(list)
+    for r in rows:
+        if r.quality_scores and r.profile_id:
+            profile_scores_map[str(r.profile_id)].append(r.quality_scores)
+
+    by_profile = {}
+    for pid, scores in profile_scores_map.items():
+        by_profile[pid] = {
+            "profile_name": profile_names.get(pid, pid[:8]),
+            "scores": aggregate_quality_scores(scores),
+            "scored_requests": len(scores),
+        }
+
+    # Flag distribution
+    flag_dist: dict[str, int] = {}
+    total_with_flags = 0
+    for r in rows:
+        if r.quality_flags:
+            total_with_flags += 1
+            for flag in r.quality_flags:
+                flag_dist[flag] = flag_dist.get(flag, 0) + 1
+
+    total_scored = len(all_scores)
+    flag_distribution = {
+        flag: {"count": count, "pct": round(count / total_scored * 100, 2) if total_scored > 0 else 0}
+        for flag, count in sorted(flag_dist.items(), key=lambda x: -x[1])
+    }
+
+    return {
+        "data": {
+            "overall": overall,
+            "by_profile": by_profile,
+            "flag_distribution": flag_distribution,
+            "scored_requests": total_scored,
+            "flagged_requests": total_with_flags,
+        }
+    }
 
 
 @router.delete("/{benchmark_id}")

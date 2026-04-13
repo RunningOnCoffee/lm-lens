@@ -10,6 +10,7 @@ from uuid import UUID
 from sqlalchemy import func, select
 
 from app.engine.collector import MetricCollector
+from app.engine.quality_scorer import aggregate_quality_scores
 from app.engine.conversation import ConversationSimulator, SessionConfig
 from app.engine.llm_client import LLMClient
 from app.engine.load_curves import create_curve
@@ -235,6 +236,8 @@ class BenchmarkRunner:
                         await sim.run()
                     finally:
                         self._snapshot_gen.requests_in_flight -= 1
+                if session_config.seeded_prompts is not None:
+                    session_config.seeded_prompts = None
         finally:
             self._decrement_active_users()
 
@@ -300,6 +303,10 @@ class BenchmarkRunner:
                         await sim.run()
                     finally:
                         self._snapshot_gen.requests_in_flight -= 1
+                # After the first seeded session, switch to random prompt
+                # selection for variety in subsequent loops
+                if session_config.seeded_prompts is not None:
+                    session_config.seeded_prompts = None
         finally:
             self._decrement_active_users()
 
@@ -360,28 +367,59 @@ class BenchmarkRunner:
         return sessions
 
     def _build_seeded_sessions(self) -> list[SessionConfig]:
-        """Build SessionConfigs from a pre-generated prompt plan."""
-        # Build a behavior lookup by profile_id
-        behavior_map: dict[str, dict] = {}
+        """Build SessionConfigs from a pre-generated prompt plan.
+
+        The first session uses pre-generated (seeded) prompts for reproducibility.
+        Templates, variables, and follow-ups are also populated so that when
+        _run_user loops (stress mode), subsequent sessions use the random path
+        for prompt variety.
+        """
+        # Build a profile data lookup by profile_id
+        profile_lookup: dict[str, dict] = {}
         for sp in self._scenario.get("profiles", []):
             profile = sp.get("profile", {})
             pid = str(profile.get("id", ""))
             behavior = sp.get("behavior_overrides") or profile.get("behavior_defaults", {})
-            behavior_map[pid] = behavior
+            templates = []
+            for t in profile.get("conversation_templates", []):
+                templates.append({
+                    "starter_prompt": t.get("starter_prompt", "Hello"),
+                    "follow_ups": t.get("follow_ups", []),
+                })
+            universal_fus = [
+                fp.get("content", "")
+                for fp in profile.get("follow_up_prompts", [])
+                if fp.get("is_universal", False)
+            ]
+            variables = {
+                v["name"]: v.get("values", [])
+                for v in profile.get("template_variables", [])
+            }
+            profile_lookup[pid] = {
+                "behavior": behavior,
+                "templates": templates,
+                "universal_follow_ups": universal_fus,
+                "variables": variables,
+            }
 
         sessions: list[SessionConfig] = []
         for entry in self._prompt_plan:
             pid = entry["profile_id"]
-            behavior = behavior_map.get(pid, {})
+            pdata = profile_lookup.get(pid, {})
+            behavior = pdata.get("behavior", {})
             think = behavior.get("think_time_seconds", {"min": 1, "max": 5})
+            turns = behavior.get("turns_per_session", {"min": 1, "max": 3})
 
             config = SessionConfig(
                 profile_id=uuid.UUID(pid),
-                session_mode="multi_turn",
-                turns_per_session=(len(entry["prompts"]), len(entry["prompts"])),
+                session_mode=behavior.get("session_mode", "multi_turn"),
+                turns_per_session=(turns.get("min", 1), turns.get("max", 3)),
                 think_time_seconds=(think.get("min", 1.0), think.get("max", 5.0)),
                 sessions_per_user=(1, 1),
                 read_time_factor=behavior.get("read_time_factor", 0.02),
+                templates=pdata.get("templates", []),
+                universal_follow_ups=pdata.get("universal_follow_ups", []),
+                variables=pdata.get("variables", {}),
                 seeded_prompts=entry["prompts"],
                 session_index=entry["session_index"],
             )
@@ -457,6 +495,8 @@ class BenchmarkRunner:
                         BenchmarkRequest.output_tokens,
                         BenchmarkRequest.error_type,
                         BenchmarkRequest.quality_flags,
+                        BenchmarkRequest.quality_scores,
+                        BenchmarkRequest.profile_id,
                         BenchmarkRequest.created_at,
                     ).where(
                         BenchmarkRequest.benchmark_id == self._benchmark_id
@@ -499,6 +539,21 @@ class BenchmarkRunner:
                         for flag in r.quality_flags:
                             qf_counts[flag] = qf_counts.get(flag, 0) + 1
 
+                # Quality scores — aggregate across all scored requests
+                all_scores = [r.quality_scores for r in rows if r.quality_scores]
+                quality_scores_agg = aggregate_quality_scores(all_scores)
+
+                # Per-profile quality scores
+                from collections import defaultdict
+                profile_scores_map: dict[str, list[dict]] = defaultdict(list)
+                for r in rows:
+                    if r.quality_scores and r.profile_id:
+                        profile_scores_map[str(r.profile_id)].append(r.quality_scores)
+                quality_scores_by_profile = {
+                    pid: aggregate_quality_scores(scores)
+                    for pid, scores in profile_scores_map.items()
+                }
+
                 summary = {
                     "total_requests": total,
                     "successful_requests": total - errors,
@@ -524,6 +579,9 @@ class BenchmarkRunner:
                     "total_input_tokens": total_input,
                     "total_output_tokens": total_output,
                     "avg_throughput_rps": round((total - errors) / duration, 2) if duration > 0 else 0,
+                    # Quality dimension scores
+                    "quality_scores": quality_scores_agg,
+                    "quality_scores_by_profile": quality_scores_by_profile,
                 }
 
                 if self._breaking_point:

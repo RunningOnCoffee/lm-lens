@@ -2,6 +2,8 @@ import re
 
 import pytest
 
+from tests.conftest import track_created
+
 
 async def _create_profile(client, name="Test Profile"):
     """Helper: create a custom profile and return its ID."""
@@ -10,7 +12,9 @@ async def _create_profile(client, name="Test Profile"):
         json={"name": name, "description": f"Profile for scenario tests"},
     )
     assert resp.status_code == 201
-    return resp.json()["data"]["id"]
+    id_ = resp.json()["data"]["id"]
+    track_created("profiles", id_)
+    return id_
 
 
 async def _create_scenario(client, profile_ids=None, **overrides):
@@ -28,6 +32,8 @@ async def _create_scenario(client, profile_ids=None, **overrides):
     }
     body.update({k: v for k, v in overrides.items() if k not in body})
     resp = await client.post("/api/v1/scenarios", json=body)
+    if resp.status_code == 201:
+        track_created("scenarios", resp.json()["data"]["id"])
     return resp
 
 
@@ -56,6 +62,7 @@ async def test_create_scenario(client):
     resp = await client.post("/api/v1/scenarios", json=body)
     assert resp.status_code == 201
     data = resp.json()["data"]
+    track_created("scenarios", data["id"])
     assert data["name"] == "Test Scenario"
     assert len(data["profiles"]) == 2
     # Check user_count and computed weight
@@ -92,6 +99,7 @@ async def test_create_scenario_with_load_config(client):
     resp = await client.post("/api/v1/scenarios", json=body)
     assert resp.status_code == 201
     data = resp.json()["data"]
+    track_created("scenarios", data["id"])
     assert data["load_config"]["test_mode"] == "breaking_point"
     assert data["load_config"]["breaking_criteria"]["max_ttft_ms"] == 3000
 
@@ -111,6 +119,7 @@ async def test_create_scenario_optional_max_tokens(client):
     }
     resp = await client.post("/api/v1/scenarios", json=body)
     assert resp.status_code == 201
+    track_created("scenarios", resp.json()["data"]["id"])
     assert resp.json()["data"]["llm_params"]["max_tokens"] is None
 
 
@@ -180,6 +189,7 @@ async def test_clone_scenario(client):
     resp = await client.post(f"/api/v1/scenarios/{source_id}/clone")
     assert resp.status_code == 201
     clone = resp.json()["data"]
+    track_created("scenarios", clone["id"])
     assert re.match(r"^Original Scenario \(\d+\)$", clone["name"])
     assert clone["id"] != source_id
     assert len(clone["profiles"]) == 1
@@ -188,6 +198,7 @@ async def test_clone_scenario(client):
     # Clone again — should increment
     resp2 = await client.post(f"/api/v1/scenarios/{source_id}/clone")
     clone2 = resp2.json()["data"]
+    track_created("scenarios", clone2["id"])
     num1 = int(re.search(r"\((\d+)\)", clone["name"]).group(1))
     num2 = int(re.search(r"\((\d+)\)", clone2["name"]).group(1))
     assert num2 == num1 + 1
@@ -220,7 +231,8 @@ async def test_list_scenario_summary_total_users(client):
             {"profile_id": p2, "user_count": 3},
         ],
     }
-    await client.post("/api/v1/scenarios", json=body)
+    resp_create = await client.post("/api/v1/scenarios", json=body)
+    track_created("scenarios", resp_create.json()["data"]["id"])
 
     resp = await client.get("/api/v1/scenarios")
     summaries = resp.json()["data"]

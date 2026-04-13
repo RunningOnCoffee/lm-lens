@@ -13,6 +13,7 @@ import QualityLoadChart from '../components/charts/QualityLoadChart';
 import RequestLog from '../components/RequestLog';
 import ResponseBrowser from '../components/ResponseBrowser';
 import QualityFlagPill from '../components/QualityFlagPill';
+import QualityScorecard from '../components/QualityScorecard';
 
 export default function BenchmarkRun() {
   const { id } = useParams();
@@ -244,6 +245,8 @@ export default function BenchmarkRun() {
                   No metrics available for this benchmark.
                 </div>
               )}
+
+              <QualityScorecard benchmarkId={id} />
 
               {snapshots.length > 1 && (
                 <div className="space-y-4">
