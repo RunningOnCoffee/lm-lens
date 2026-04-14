@@ -16,15 +16,25 @@ from app.models.benchmark import BenchmarkRequest
 
 logger = logging.getLogger(__name__)
 
-# Refusal detection patterns
+# Refusal detection patterns — only checked against first 300 chars of response
 _REFUSAL_PATTERNS = re.compile(
     r"(?i)\b("
     r"I cannot|I can't|I'm not able to|I am not able to|"
     r"I'm unable to|I am unable to|"
     r"I must decline|I have to decline|"
+    r"I'm sorry, but I'm not able|my guidelines prevent|it would be inappropriate|"
     r"as an AI|as a language model|as an artificial intelligence"
     r")\b"
 )
+
+# Phrases that look like refusals but aren't
+_REFUSAL_FALSE_POSITIVES = re.compile(
+    r"(?i)("
+    r"I cannot stress|I cannot overstate|I can't help but|I cannot emphasize|"
+    r"I can't overstate|I can't stress|I cannot help but"
+    r")"
+)
+
 
 # JSON request detection — only trigger when the prompt explicitly asks for JSON output
 _JSON_REQUEST_PATTERNS = re.compile(
@@ -185,6 +195,44 @@ def _check_language_match(prompt: str, response: str) -> bool:
     return prompt_script != response_script
 
 
+def _check_text_repetition(response: str) -> bool:
+    """Detect repeated text via N-gram analysis.
+
+    Flags if any single 5-gram appears in >30% of positions,
+    or if the same sentence appears 3+ times.
+    Skips responses under 100 chars.
+    """
+    if len(response) < 100:
+        return False
+
+    # Sentence-level check: same sentence 3+ times
+    sentences = [s.strip() for s in re.split(r"[.!?]+", response) if len(s.strip()) > 10]
+    if sentences:
+        from collections import Counter
+        sentence_counts = Counter(sentences)
+        if sentence_counts and sentence_counts.most_common(1)[0][1] >= 3:
+            return True
+
+    # 5-gram check
+    words = response.lower().split()
+    if len(words) < 10:
+        return False
+    ngrams: dict[tuple, int] = {}
+    n = 5
+    total_positions = len(words) - n + 1
+    if total_positions <= 0:
+        return False
+    for i in range(total_positions):
+        gram = tuple(words[i:i + n])
+        ngrams[gram] = ngrams.get(gram, 0) + 1
+    max_count = max(ngrams.values())
+    if max_count / total_positions > 0.3:
+        return True
+
+    return False
+
+
+
 def _compute_quality_flags(result: LLMRequestResult) -> list[str] | None:
     """Compute quality flags for a completed request."""
     flags: list[str] = []
@@ -198,11 +246,14 @@ def _compute_quality_flags(result: LLMRequestResult) -> list[str] | None:
     if result.finish_reason == "length":
         flags.append("truncated")
 
-    # Refusal detection
-    if result.response_text and _REFUSAL_PATTERNS.search(result.response_text):
-        flags.append("refusal")
+    # Refusal detection — only check first 300 chars (refusals are always up front)
+    if result.response_text:
+        head = result.response_text[:300]
+        if _REFUSAL_PATTERNS.search(head) and not _REFUSAL_FALSE_POSITIVES.search(head):
+            flags.append("refusal")
 
-    # Repeated tokens — detect via low ITL variance (suspiciously uniform generation)
+    # Repeated tokens — ITL-based check OR text N-gram analysis
+    itl_flagged = False
     itls = result.inter_token_latencies
     if itls and len(itls) >= 20:
         mean = sum(itls) / len(itls)
@@ -211,7 +262,10 @@ def _compute_quality_flags(result: LLMRequestResult) -> list[str] | None:
             cv = (variance ** 0.5) / mean  # coefficient of variation
             # Very low CV with many tokens suggests degenerate repetition
             if cv < 0.1 and result.output_tokens and result.output_tokens > 50:
-                flags.append("repeated_tokens")
+                itl_flagged = True
+
+    if itl_flagged or _check_text_repetition(result.response_text or ""):
+        flags.append("repeated_tokens")
 
     # --- New quality checks (Phase 8c) ---
     prompt = _extract_prompt_text(result)
