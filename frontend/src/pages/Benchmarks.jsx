@@ -37,6 +37,7 @@ export default function Benchmarks() {
   const [busy, setBusy] = useState(false);
   const [compareMode, setCompareMode] = useState(false);
   const [compareSelected, setCompareSelected] = useState(new Set());
+  const [concurrentWarning, setConcurrentWarning] = useState(null); // { conflicts: [...] }
 
   useEffect(() => { fetchBenchmarks(); fetchScenarios(); fetchEndpoints(); }, [fetchBenchmarks, fetchScenarios, fetchEndpoints]);
 
@@ -48,8 +49,7 @@ export default function Benchmarks() {
     return () => clearInterval(interval);
   }, [benchmarks, fetchBenchmarks]);
 
-  const handleStart = async () => {
-    if (!selectedScenario || !selectedEndpoint) return;
+  const doStart = async () => {
     setStarting(true);
     setActionError(null);
     try {
@@ -62,6 +62,20 @@ export default function Benchmarks() {
       setActionError(err.message);
     } finally {
       setStarting(false);
+    }
+  };
+
+  const handleStart = () => {
+    if (!selectedScenario || !selectedEndpoint) return;
+    // Check if any running/pending benchmarks target the same endpoint
+    const conflicts = benchmarks.filter(
+      (b) => (b.status === 'running' || b.status === 'pending') &&
+        b.endpoint_id === selectedEndpoint
+    );
+    if (conflicts.length > 0) {
+      setConcurrentWarning({ conflicts });
+    } else {
+      doStart();
     }
   };
 
@@ -168,7 +182,7 @@ export default function Benchmarks() {
     );
   }
 
-  const cols = 'grid-cols-[40px_1fr_140px_60px_120px_100px_80px_100px_160px]';
+  const cols = 'grid-cols-[40px_1fr_140px_60px_120px_100px_80px_100px_190px]';
 
   return (
     <div>
@@ -256,6 +270,51 @@ export default function Benchmarks() {
       {(error || actionError) && (
         <div className="mb-4 p-3 rounded-lg bg-danger/10 border border-danger/30 text-danger text-sm">
           {error || actionError}
+        </div>
+      )}
+
+      {/* Concurrent benchmark warning dialog */}
+      {concurrentWarning && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
+          <div className="bg-surface-800 border border-warn/30 rounded-xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div className="flex items-start gap-3 mb-4">
+              <div className="text-warn text-xl mt-0.5">&#9888;</div>
+              <div>
+                <h3 className="font-heading text-base font-semibold text-gray-100 mb-1">
+                  Endpoint Already Under Load
+                </h3>
+                <p className="text-sm text-gray-400">
+                  {concurrentWarning.conflicts.length === 1
+                    ? 'There is already a benchmark running on this endpoint. '
+                    : `There are ${concurrentWarning.conflicts.length} benchmarks running on this endpoint. `}
+                  Running concurrent benchmarks against the same endpoint will cause them to compete for resources, which can falsify performance results.
+                </p>
+              </div>
+            </div>
+            <div className="mb-5 space-y-1.5">
+              {concurrentWarning.conflicts.map((b) => (
+                <div key={b.id} className="flex items-center gap-2 px-3 py-2 bg-surface-700/50 rounded-lg text-xs">
+                  <StatusBadge status={b.status} />
+                  <span className="text-gray-300 truncate">{b.scenario_name || 'Unknown'}</span>
+                  <span className="text-gray-600 font-mono ml-auto">{b.id.slice(0, 8)}</span>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2">
+              <button
+                onClick={() => setConcurrentWarning(null)}
+                className="px-4 py-2 text-sm rounded-lg bg-surface-700 text-gray-300 hover:bg-surface-600 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => { setConcurrentWarning(null); doStart(); }}
+                className="px-4 py-2 text-sm rounded-lg bg-warn/20 border border-warn/30 text-warn hover:bg-warn/30 transition-colors font-medium"
+              >
+                Run Anyway
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -371,6 +430,7 @@ export default function Benchmarks() {
 
 function BenchmarkRow({ benchmark, cols, isSelected, isDeletable, onToggle, compareMode, compareSelected, compareSelectable, onCompareToggle, formatDuration, formatTime, onView, onAbort, onDelete }) {
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [aborting, setAborting] = useState(false);
   const isActive = benchmark.status === 'running' || benchmark.status === 'pending';
 
   const rowBg = compareMode
@@ -440,10 +500,11 @@ function BenchmarkRow({ benchmark, cols, isSelected, isDeletable, onToggle, comp
         </button>
         {isActive && (
           <button
-            onClick={onAbort}
-            className="px-2.5 py-1 text-[11px] rounded bg-warn/10 text-warn hover:bg-warn/20 transition-colors"
+            onClick={() => { setAborting(true); onAbort(); }}
+            disabled={aborting}
+            className="px-2.5 py-1 text-[11px] rounded bg-warn/10 text-warn hover:bg-warn/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Abort
+            {aborting ? 'Aborting...' : 'Abort'}
           </button>
         )}
         {!isActive && (

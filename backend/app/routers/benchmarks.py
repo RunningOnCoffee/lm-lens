@@ -284,6 +284,7 @@ async def list_benchmarks(db: AsyncSession = Depends(get_db)):
             BenchmarkSummary(
                 id=bench.id,
                 scenario_id=bench.scenario_id,
+                endpoint_id=bench.endpoint_id,
                 scenario_name=bench.scenario_snapshot.get("name", "") if bench.scenario_snapshot else "",
                 endpoint_name=ep_snap.get("name", ""),
                 model_name=ep_snap.get("model_name", ""),

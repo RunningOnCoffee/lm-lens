@@ -35,6 +35,7 @@ class BenchmarkRead(BaseModel):
 class BenchmarkSummary(BaseModel):
     id: UUID
     scenario_id: UUID
+    endpoint_id: UUID | None = None
     scenario_name: str = ""
     endpoint_name: str = ""
     model_name: str = ""
