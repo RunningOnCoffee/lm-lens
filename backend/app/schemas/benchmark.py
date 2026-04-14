@@ -111,6 +111,8 @@ class ProfileStatsEntry(BaseModel):
     tps_p50: float | None = None
     tps_p5: float | None = None
     avg_output_tokens: float | None = None
+    total_input_tokens: int = 0
+    total_output_tokens: int = 0
     quality_flag_counts: dict[str, int] = {}
 
 

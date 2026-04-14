@@ -806,6 +806,8 @@ async def get_profile_stats(benchmark_id: UUID, db: AsyncSession = Depends(get_d
         ttft_vals = [r.ttft_ms for r in ok if r.ttft_ms is not None]
         tps_vals = [r.tokens_per_second for r in ok if r.tokens_per_second is not None]
         out_tokens = [r.output_tokens for r in ok if r.output_tokens is not None]
+        sum_input = sum(r.input_tokens or 0 for r in reqs)
+        sum_output = sum(r.output_tokens or 0 for r in reqs)
 
         # Quality flag counts
         qf_counts: dict[str, int] = {}
@@ -825,6 +827,8 @@ async def get_profile_stats(benchmark_id: UUID, db: AsyncSession = Depends(get_d
             tps_p50=_round(percentile(tps_vals, 50)),
             tps_p5=_round(percentile(tps_vals, 5)),
             avg_output_tokens=_round(sum(out_tokens) / len(out_tokens)) if out_tokens else None,
+            total_input_tokens=sum_input,
+            total_output_tokens=sum_output,
             quality_flag_counts=qf_counts,
         ).model_dump())
 
