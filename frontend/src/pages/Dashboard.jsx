@@ -1,9 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardApi } from '../api/client';
+import { dashboardApi, benchmarksApi } from '../api/client';
 import MetricCard from '../components/MetricCard';
 import StatusBadge from '../components/StatusBadge';
 import InfoTip from '../components/InfoTip';
+import EndpointTTFTChart from '../components/charts/EndpointTTFTChart';
+import TokenEconomyChart from '../components/charts/TokenEconomyChart';
+import ProfileLatencyChart from '../components/charts/ProfileLatencyChart';
+import EndpointQualityChart from '../components/charts/EndpointQualityChart';
 
 function HealthDot({ status }) {
   const color = status === 'healthy' ? 'bg-green-400' : status === 'error' ? 'bg-danger' : 'bg-gray-500';
@@ -43,11 +47,74 @@ function qualityColor(score) {
   return 'text-danger';
 }
 
+function ActiveRunRow({ benchmark, onView }) {
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    const start = new Date(benchmark.created_at).getTime();
+    const tick = () => setElapsed(Math.floor((Date.now() - start) / 1000));
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [benchmark.created_at]);
+
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  const timeStr = mins > 0 ? `${mins}m ${String(secs).padStart(2, '0')}s` : `${secs}s`;
+
+  return (
+    <div
+      onClick={onView}
+      className="flex items-center gap-3 px-4 py-3 border-b border-accent/20 bg-accent/5 hover:bg-accent/10 cursor-pointer transition-colors"
+    >
+      <div className="flex items-center gap-2">
+        <div className="w-2 h-2 rounded-full bg-accent animate-pulse" />
+        <StatusBadge status={benchmark.status} />
+      </div>
+      <div className="flex-1 min-w-0">
+        <span className="text-sm text-gray-200 font-medium truncate block">
+          {benchmark.scenario_name || 'Unknown Scenario'}
+        </span>
+        <span className="text-[10px] text-gray-600">
+          {benchmark.endpoint_name}{benchmark.model_name ? ` / ${benchmark.model_name}` : ''}
+        </span>
+      </div>
+      <div className="flex items-center gap-4 text-xs tabular-nums">
+        <span className="text-accent font-mono">
+          {timeStr}
+          {benchmark.planned_duration != null && (
+            <span className="text-gray-600"> / {formatDuration(benchmark.planned_duration)}</span>
+          )}
+        </span>
+        <span className="text-gray-500">{benchmark.total_requests} req</span>
+        <span className="text-[11px] text-accent/70 font-medium">Live View</span>
+      </div>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const navigate = useNavigate();
   const [health, setHealth] = useState({ api: 'loading', db: 'loading', mock: 'loading' });
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [activeBenchmarks, setActiveBenchmarks] = useState([]);
+
+  const fetchDashboard = () => {
+    dashboardApi.get()
+      .then((res) => setData(res.data))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  };
+
+  const fetchActive = () => {
+    benchmarksApi.list()
+      .then((res) => {
+        const active = (res.data || []).filter((b) => b.status === 'running' || b.status === 'pending');
+        setActiveBenchmarks(active);
+      })
+      .catch(() => {});
+  };
 
   useEffect(() => {
     fetch('/api/v1/health')
@@ -62,11 +129,28 @@ export default function Dashboard() {
       })
       .catch(() => setHealth({ api: 'error', db: 'error', mock: 'error' }));
 
-    dashboardApi.get()
-      .then((res) => setData(res.data))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    fetchDashboard();
+    fetchActive();
   }, []);
+
+  // Poll active benchmarks every 3s, refresh dashboard when they finish
+  useEffect(() => {
+    if (activeBenchmarks.length === 0) return;
+    const interval = setInterval(() => {
+      benchmarksApi.list()
+        .then((res) => {
+          const all = res.data || [];
+          const nowActive = all.filter((b) => b.status === 'running' || b.status === 'pending');
+          // If something just finished, refresh dashboard data
+          if (nowActive.length < activeBenchmarks.length) {
+            fetchDashboard();
+          }
+          setActiveBenchmarks(nowActive);
+        })
+        .catch(() => {});
+    }, 3000);
+    return () => clearInterval(interval);
+  }, [activeBenchmarks.length]);
 
   const isEmpty = !data || data.fleet.total_benchmarks === 0;
 
@@ -203,13 +287,26 @@ export default function Dashboard() {
             </div>
           )}
 
-          {/* Recent runs */}
-          {data.recent_runs.length > 0 && (
+          {/* Charts */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <EndpointTTFTChart endpoints={data.endpoints} />
+            <TokenEconomyChart />
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+            <ProfileLatencyChart profiles={data.profiles} />
+            <EndpointQualityChart endpoints={data.endpoints} />
+          </div>
+
+          {/* Recent runs (active benchmarks on top) */}
+          {(activeBenchmarks.length > 0 || data.recent_runs.length > 0) && (
             <div className="bg-surface-800 border border-surface-600 rounded-xl overflow-hidden">
               <div className="px-4 py-3 border-b border-surface-600">
                 <h3 className="text-xs uppercase tracking-wider text-gray-500 font-semibold">Recent Runs</h3>
               </div>
               <div>
+                {activeBenchmarks.map((b) => (
+                  <ActiveRunRow key={b.id} benchmark={b} onView={() => navigate(`/benchmarks/${b.id}`)} />
+                ))}
                 {data.recent_runs.map((run) => (
                   <div
                     key={run.id}

@@ -45,6 +45,7 @@ class BenchmarkSummary(BaseModel):
     status: str
     total_requests: int = 0
     duration_seconds: float | None = None
+    planned_duration: float | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

@@ -280,12 +280,14 @@ async def list_benchmarks(db: AsyncSession = Depends(get_db)):
             duration = (bench.completed_at - bench.started_at).total_seconds()
 
         ep_snap = bench.endpoint_snapshot or {}
+        sc_snap = bench.scenario_snapshot or {}
+        planned = (sc_snap.get("load_config") or {}).get("duration_seconds")
         items.append(
             BenchmarkSummary(
                 id=bench.id,
                 scenario_id=bench.scenario_id,
                 endpoint_id=bench.endpoint_id,
-                scenario_name=bench.scenario_snapshot.get("name", "") if bench.scenario_snapshot else "",
+                scenario_name=sc_snap.get("name", ""),
                 endpoint_name=ep_snap.get("name", ""),
                 model_name=ep_snap.get("model_name", ""),
                 gpu=ep_snap.get("gpu"),
@@ -294,6 +296,7 @@ async def list_benchmarks(db: AsyncSession = Depends(get_db)):
                 status=bench.status,
                 total_requests=total_reqs or 0,
                 duration_seconds=duration,
+                planned_duration=planned,
                 created_at=bench.created_at,
             ).model_dump(mode="json")
         )
