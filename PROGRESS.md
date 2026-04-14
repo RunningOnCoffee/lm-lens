@@ -185,15 +185,36 @@ Identified but not yet implemented:
 ## Phase 9 Bug Fixes
 - [x] Seeded benchmarks: looping users now get varied prompts after first seeded session (templates + variables populated on seeded SessionConfig, seeded_prompts cleared after first run)
 
-## Phase 10: Polish & Documentation
-- [ ] Visual polish items from audit (loading states, empty states, error handling)
-- [ ] Cost estimation (user-provided $/token rate)
-- [ ] Error categorization (timeout, rate limit, malformed, refusal)
-- [ ] Endpoint quick-test UI (send one request, see raw response)
-- [ ] Expected throughput estimate in scenario builder
-- [ ] Documentation / README
+## Phase 10: Polish & Improvements
 
-## Roadmap / Future: LLM-as-Judge
-- Configurable judge endpoint for multi-dimensional quality scoring
-- Multi-dimensional evaluation (relevance, coherence, completeness, instruction-following)
-- Enhances A/B comparison and standalone quality evaluation
+### 10e: Concurrent Benchmark Warning (complete)
+- [x] Frontend warns when starting a benchmark on an endpoint already under load
+- [x] Confirmation dialog with conflict details, "Run Anyway" option
+- [x] Abort button immediately shows "Aborting..." and disables
+- [x] Actions column widened to prevent layout shift
+
+### 10a: Improved Heuristic Detection (complete)
+- [x] N-gram text repetition detection (5-gram >30% positions, or same sentence 3+ times)
+- [x] Reduced refusal false positives (first 300 chars only, negative patterns like "I cannot stress")
+- [x] Responsiveness dimension evaluated and removed — keyword overlap too crude to be meaningful
+
+### Dashboard Redesign (complete)
+- [x] Backend: GET /api/v1/dashboard — fleet overview, per-endpoint performance, per-profile latency, recent runs
+- [x] Backend: GET /api/v1/dashboard/token-economy — token breakdown by endpoint or profile
+- [x] Backend: planned_duration on BenchmarkSummary, total_input/output_tokens on ProfileStatsEntry
+- [x] Frontend: Fleet overview metric cards (benchmarks, requests, tokens, quality)
+- [x] Frontend: Endpoint performance table (TTFT, tok/s, quality, tokens, last run)
+- [x] Frontend: TTFT by Endpoint bar chart
+- [x] Frontend: Token Economy chart (by profile / by endpoint toggle)
+- [x] Frontend: Profile Latency horizontal bar chart
+- [x] Frontend: Quality by Endpoint progress bars
+- [x] Frontend: Live benchmarks in Recent Runs with elapsed/planned timer, auto-refresh on completion
+- [x] Frontend: Extracted MetricCard and StatusBadge to shared components
+- [x] 133 tests passing
+
+### Remaining
+- [ ] Phase D: Per-run token economy chart on BenchmarkRun Analysis tab
+- [ ] Phase 10f/10g: Live quality scores via WebSocket + live QualityScorecard widget
+- [ ] Phase 10b-10d: LLM-as-Judge (data model, engine, frontend)
+- [ ] Visual polish items from audit (loading states, empty states, error handling)
+- [ ] Documentation / README
