@@ -52,6 +52,17 @@ export const endpointsApi = {
   testConnection: (body) => api.post('/endpoint/test', body),
 };
 
+// Dashboard API
+export const dashboardApi = {
+  get: () => api.get('/dashboard'),
+  tokenEconomy: (params = {}) => {
+    const qs = new URLSearchParams(
+      Object.entries(params).filter(([, v]) => v != null && v !== '')
+    ).toString();
+    return api.get(`/dashboard/token-economy${qs ? `?${qs}` : ''}`);
+  },
+};
+
 // Benchmarks API
 export const benchmarksApi = {
   list: () => api.get('/benchmarks'),
