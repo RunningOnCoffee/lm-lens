@@ -75,6 +75,11 @@ export default function LatencyTimeline({ snapshots, breakingPoint }) {
         First-Turn TTFT Over Time
         <InfoTip text="Time to First Token over the benchmark duration. Shows how response latency changes under load. The shaded area shows active users. P50 = median, P95 = 95th percentile." />
       </h3>
+      {data.length === 0 ? (
+        <div className="h-[240px] flex items-center justify-center text-gray-600 text-xs">
+          No latency data yet. Data will appear as the benchmark runs.
+        </div>
+      ) : (
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
           <CartesianGrid {...GRID_STYLE} />
@@ -163,6 +168,7 @@ export default function LatencyTimeline({ snapshots, breakingPoint }) {
           )}
         </ComposedChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 }

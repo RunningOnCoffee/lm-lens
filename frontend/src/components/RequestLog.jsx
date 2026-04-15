@@ -72,7 +72,11 @@ export default function RequestLog({ snapshots, historicalRequests }) {
   };
 
   if (entries.length === 0) {
-    return null;
+    return (
+      <div className="mt-4 bg-surface-800 border border-surface-600 rounded-xl p-6 text-center text-gray-600 text-xs">
+        No requests logged yet. Requests will appear here as the benchmark runs.
+      </div>
+    );
   }
 
   return (

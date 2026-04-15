@@ -4,6 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { benchmarksApi } from '../api/client';
 import InfoTip from '../components/InfoTip';
+import Spinner from '../components/Spinner';
 import TabBar from '../components/TabBar';
 import QualityFlagPill from '../components/QualityFlagPill';
 
@@ -57,7 +58,7 @@ export default function BenchmarkCompare() {
   }, [idA, idB]);
 
   if (loading) {
-    return <div className="flex items-center justify-center h-64 text-gray-500 text-sm">Loading comparison...</div>;
+    return <div className="flex items-center justify-center h-64 gap-2 text-gray-500 text-sm"><Spinner size="sm" /> Loading comparison...</div>;
   }
   if (error) {
     return (
@@ -394,8 +395,8 @@ function SideBySideResponses({ idA, idB, epA, epB, isMatchedSeed }) {
       </div>
 
       {loading ? (
-        <div className="bg-surface-800 border border-surface-600 rounded-xl p-12 text-center text-gray-500 text-sm">
-          Loading session...
+        <div className="bg-surface-800 border border-surface-600 rounded-xl p-12 flex items-center justify-center gap-2 text-gray-500 text-sm">
+          <Spinner size="sm" /> Loading session...
         </div>
       ) : !sessionData ? (
         <div className="bg-surface-800 border border-surface-600 rounded-xl p-12 text-center text-gray-500 text-sm">

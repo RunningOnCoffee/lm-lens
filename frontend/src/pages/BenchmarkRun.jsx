@@ -6,6 +6,7 @@ import TabBar from '../components/TabBar';
 import AnalysisTab from '../components/AnalysisTab';
 import InfoTip from '../components/InfoTip';
 import MetricCard from '../components/MetricCard';
+import Spinner from '../components/Spinner';
 import LatencyTimeline from '../components/charts/LatencyTimeline';
 import ThroughputChart from '../components/charts/ThroughputChart';
 import ErrorChart from '../components/charts/ErrorChart';
@@ -99,7 +100,7 @@ export default function BenchmarkRun() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading benchmark...</p>
+        <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading benchmark...</div>
       </div>
     );
   }

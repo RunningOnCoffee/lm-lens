@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { dashboardApi, benchmarksApi } from '../api/client';
 import MetricCard from '../components/MetricCard';
+import Spinner from '../components/Spinner';
 import StatusBadge from '../components/StatusBadge';
 import InfoTip from '../components/InfoTip';
 import EndpointTTFTChart from '../components/charts/EndpointTTFTChart';
@@ -176,7 +177,7 @@ export default function Dashboard() {
 
       {loading && (
         <div className="flex items-center justify-center h-64">
-          <p className="text-gray-500">Loading dashboard...</p>
+          <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading dashboard...</div>
         </div>
       )}
 

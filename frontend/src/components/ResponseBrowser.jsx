@@ -3,6 +3,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { benchmarksApi } from '../api/client';
 import QualityFlagPill from './QualityFlagPill';
+import Spinner from './Spinner';
 
 const PER_PAGE = 20;
 
@@ -77,8 +78,8 @@ export default function ResponseBrowser({ benchmarkId }) {
 
       {/* Session list */}
       {loading && sessions.length === 0 ? (
-        <div className="bg-surface-800 border border-surface-600 rounded-xl p-12 text-center text-gray-500 text-sm">
-          Loading conversations...
+        <div className="bg-surface-800 border border-surface-600 rounded-xl p-12 flex items-center justify-center gap-2 text-gray-500 text-sm">
+          <Spinner size="sm" /> Loading conversations...
         </div>
       ) : sessions.length === 0 ? (
         <div className="bg-surface-800 border border-surface-600 rounded-xl p-12 text-center text-gray-500 text-sm">
@@ -202,8 +203,8 @@ function ConversationView({ benchmarkId, sessionId }) {
 
   if (loading) {
     return (
-      <div className="px-6 py-8 text-center text-gray-500 text-sm border-t border-surface-600">
-        Loading conversation...
+      <div className="px-6 py-8 flex items-center justify-center gap-2 text-gray-500 text-sm border-t border-surface-600">
+        <Spinner size="sm" /> Loading conversation...
       </div>
     );
   }

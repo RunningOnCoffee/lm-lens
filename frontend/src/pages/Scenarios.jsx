@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useScenarioStore from '../stores/scenarioStore';
+import Spinner from '../components/Spinner';
 
 const MODE_LABELS = {
   stress: 'Stress',
@@ -97,7 +98,7 @@ export default function Scenarios() {
   if (loading && scenarios.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading scenarios...</p>
+        <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading scenarios...</div>
       </div>
     );
   }

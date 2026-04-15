@@ -812,6 +812,22 @@ async def get_profile_stats(benchmark_id: UUID, db: AsyncSession = Depends(get_d
         sum_input = sum(r.input_tokens or 0 for r in reqs)
         sum_output = sum(r.output_tokens or 0 for r in reqs)
 
+        # Prefill / decode time breakdown
+        total_prefill_ms = sum(r.ttft_ms for r in ok if r.ttft_ms is not None)
+        total_decode_ms = sum(
+            max(0, (r.tgt_ms or 0) - (r.ttft_ms or 0))
+            for r in ok
+            if r.tgt_ms is not None and r.ttft_ms is not None
+        )
+        prefill_tok_per_sec = (
+            _round(sum_input / (total_prefill_ms / 1000))
+            if total_prefill_ms > 0 else None
+        )
+        decode_tok_per_sec = (
+            _round(sum_output / (total_decode_ms / 1000))
+            if total_decode_ms > 0 else None
+        )
+
         # Quality flag counts
         qf_counts: dict[str, int] = {}
         for r in reqs:
@@ -833,6 +849,10 @@ async def get_profile_stats(benchmark_id: UUID, db: AsyncSession = Depends(get_d
             total_input_tokens=sum_input,
             total_output_tokens=sum_output,
             quality_flag_counts=qf_counts,
+            total_prefill_ms=_round(total_prefill_ms),
+            total_decode_ms=_round(total_decode_ms),
+            prefill_tok_per_sec=prefill_tok_per_sec,
+            decode_tok_per_sec=decode_tok_per_sec,
         ).model_dump())
 
     return {"data": data}

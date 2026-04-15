@@ -3,6 +3,7 @@ import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Toolti
 import { COLORS, AXIS_STYLE, GRID_STYLE, TOOLTIP_STYLE } from './ChartTheme';
 import { dashboardApi } from '../../api/client';
 import InfoTip from '../InfoTip';
+import Spinner from '../Spinner';
 
 function formatTokens(n) {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
@@ -57,7 +58,7 @@ export default function TokenEconomyChart() {
         </div>
       </div>
 
-      {loading && <div className="h-[240px] flex items-center justify-center text-gray-600 text-xs">Loading...</div>}
+      {loading && <div className="h-[240px] flex items-center justify-center gap-2 text-gray-600 text-xs"><Spinner size="sm" /></div>}
 
       {!loading && chartData.length === 0 && (
         <div className="h-[240px] flex items-center justify-center text-gray-600 text-xs">No token data available</div>

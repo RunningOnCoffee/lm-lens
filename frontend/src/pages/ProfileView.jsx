@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { profilesApi } from '../api/client';
+import Spinner from '../components/Spinner';
 import ConversationPreview from '../components/ConversationPreview';
 
 export default function ProfileView() {
@@ -24,7 +25,7 @@ export default function ProfileView() {
   }
 
   if (!profile) {
-    return <p className="text-gray-500">Loading...</p>;
+    return <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading profile...</div>;
   }
 
   const b = profile.behavior_defaults;

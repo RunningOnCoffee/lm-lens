@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { endpointsApi } from '../api/client';
+import Spinner from '../components/Spinner';
 
 export default function EndpointEditor() {
   const { id } = useParams();
@@ -99,7 +100,7 @@ export default function EndpointEditor() {
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading endpoint...</p>
+        <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading endpoint...</div>
       </div>
     );
   }

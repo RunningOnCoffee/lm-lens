@@ -6,6 +6,7 @@ import {
 import { benchmarksApi } from '../../api/client';
 import { COLORS, AXIS_STYLE, GRID_STYLE, TOOLTIP_STYLE } from './ChartTheme';
 import InfoTip from '../InfoTip';
+import Spinner from '../Spinner';
 
 const METRICS = [
   { id: 'ttft_ms', label: 'TTFT (ms)' },
@@ -83,8 +84,8 @@ export default function LatencyHistogram({ benchmarkId, profiles }) {
       </div>
 
       {loading ? (
-        <div className="h-64 flex items-center justify-center text-gray-600 text-sm">
-          Loading histogram...
+        <div className="h-64 flex items-center justify-center gap-2 text-gray-600 text-sm">
+          <Spinner size="sm" /> Loading histogram...
         </div>
       ) : chartData.length === 0 ? (
         <div className="h-64 flex items-center justify-center text-gray-600 text-sm">

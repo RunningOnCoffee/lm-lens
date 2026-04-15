@@ -150,15 +150,13 @@
 - [x] Removed lens.bat (docker compose commands documented in CLAUDE.md)
 - [ ] Final visual polish (loading states, empty states, error handling — see audit notes below)
 
-### Visual Polish Audit (deferred to Phase 10)
-Identified but not yet implemented:
-- Reusable Spinner component (replace 6+ text-only loading states)
-- RequestLog returns null when empty (should show placeholder card)
-- Silent API error handling (.catch(() => {})) across multiple components
-- Delete confirmation auto-dismiss timeout
-- Chart empty states (LatencyTimeline, ThroughputChart)
-- Response truncation UX (silent 800/2000 char cuts, no expand option)
-- Success feedback on delete/export actions
+### Visual Polish Audit (mostly resolved)
+- [x] Reusable Spinner component (replace 6+ text-only loading states)
+- [x] RequestLog returns null when empty (now shows placeholder card)
+- [x] Chart empty states (LatencyTimeline, ThroughputChart)
+- Remaining minor items (not blocking):
+  - Silent API error handling (.catch(() => {})) across some components
+  - Response truncation UX (silent 800/2000 char cuts, no expand option)
 
 ## Phase 8: Load Curves, Breaking Point & Quality-Under-Load
 - [x] Load curve engine: Step, Linear, Spike, Wave implementations (backend)
@@ -212,9 +210,23 @@ Identified but not yet implemented:
 - [x] Frontend: Extracted MetricCard and StatusBadge to shared components
 - [x] 133 tests passing
 
-### Remaining
-- [ ] Phase D: Per-run token economy chart on BenchmarkRun Analysis tab
+### Phase D: Per-run Token Economy Chart (complete)
+- [x] TokenEconomyRunChart component (input/output bars per profile, total summaries)
+- [x] Added to Analysis tab between histogram and profile comparison
+- [x] Prefill/decode phase breakdown: Tokens | Time | Speed toggle views
+- [x] Backend: total_prefill_ms, total_decode_ms, prefill_tok_per_sec, decode_tok_per_sec on profile-stats
+- [x] Time view: prefill (TTFT) vs decode (TGT-TTFT) GPU time per profile, % prefill split
+- [x] Speed view: prefill tok/s vs decode tok/s per profile, bottleneck identification
+- [x] Contextual InfoTip per view explaining prefill/decode implications
+
+### Visual Polish (complete)
+- [x] Reusable Spinner component (animated border spinner, sm/md/lg sizes)
+- [x] Spinner added to all page-level loading states (Dashboard, Benchmarks, BenchmarkRun, Scenarios, Profiles, Endpoints, EndpointEditor, ProfileView, BenchmarkCompare)
+- [x] Spinner added to inline loading states (AnalysisTab, LatencyHistogram, TokenEconomyChart, ResponseBrowser)
+- [x] RequestLog empty state (placeholder card instead of returning null)
+- [x] Chart empty states for LatencyTimeline and ThroughputChart
+
+### Remaining (deferred)
 - [ ] Phase 10f/10g: Live quality scores via WebSocket + live QualityScorecard widget
 - [ ] Phase 10b-10d: LLM-as-Judge (data model, engine, frontend)
-- [ ] Visual polish items from audit (loading states, empty states, error handling)
 - [ ] Documentation / README

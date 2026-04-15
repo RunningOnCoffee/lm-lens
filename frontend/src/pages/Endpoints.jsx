@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useEndpointStore from '../stores/endpointStore';
+import Spinner from '../components/Spinner';
 
 export default function Endpoints() {
   const { endpoints, loading, error, fetchEndpoints, deleteEndpoint, cloneEndpoint } = useEndpointStore();
@@ -81,7 +82,7 @@ export default function Endpoints() {
   if (loading && endpoints.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading endpoints...</p>
+        <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading endpoints...</div>
       </div>
     );
   }

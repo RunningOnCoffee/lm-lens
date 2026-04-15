@@ -25,6 +25,11 @@ export default function ThroughputChart({ snapshots }) {
         Throughput Over Time
         <InfoTip text="Tokens per second (generation speed) and requests per second over time. Higher throughput means the endpoint is handling more work." />
       </h3>
+      {data.length === 0 ? (
+        <div className="h-[240px] flex items-center justify-center text-gray-600 text-xs">
+          No throughput data yet. Data will appear as the benchmark runs.
+        </div>
+      ) : (
       <ResponsiveContainer width="100%" height={240}>
         <ComposedChart data={data} margin={{ top: 5, right: 10, left: 0, bottom: 0 }}>
           <CartesianGrid {...GRID_STYLE} />
@@ -88,6 +93,7 @@ export default function ThroughputChart({ snapshots }) {
           />
         </ComposedChart>
       </ResponsiveContainer>
+      )}
     </div>
   );
 }

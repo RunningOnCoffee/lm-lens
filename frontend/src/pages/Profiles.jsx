@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useProfileStore from '../stores/profileStore';
+import Spinner from '../components/Spinner';
 
 export default function Profiles() {
   const { profiles, loading, error, fetchProfiles, deleteProfile, cloneProfile } = useProfileStore();
@@ -89,7 +90,7 @@ export default function Profiles() {
   if (loading && profiles.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading profiles...</p>
+        <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading profiles...</div>
       </div>
     );
   }

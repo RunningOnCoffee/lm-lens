@@ -4,6 +4,7 @@ import useBenchmarkStore from '../stores/benchmarkStore';
 import useScenarioStore from '../stores/scenarioStore';
 import useEndpointStore from '../stores/endpointStore';
 import InfoTip from '../components/InfoTip';
+import Spinner from '../components/Spinner';
 import StatusBadge from '../components/StatusBadge';
 
 export default function Benchmarks() {
@@ -162,7 +163,7 @@ export default function Benchmarks() {
   if (loading && benchmarks.length === 0) {
     return (
       <div className="flex items-center justify-center h-64">
-        <p className="text-gray-500">Loading benchmarks...</p>
+        <div className="flex items-center gap-2 text-gray-500"><Spinner size="sm" /> Loading benchmarks...</div>
       </div>
     );
   }

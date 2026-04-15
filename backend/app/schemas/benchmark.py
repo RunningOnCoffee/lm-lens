@@ -115,6 +115,11 @@ class ProfileStatsEntry(BaseModel):
     total_input_tokens: int = 0
     total_output_tokens: int = 0
     quality_flag_counts: dict[str, int] = {}
+    # Prefill / decode phase breakdown
+    total_prefill_ms: float = 0
+    total_decode_ms: float = 0
+    prefill_tok_per_sec: float | None = None
+    decode_tok_per_sec: float | None = None
 
 
 # --- Benchmark Snapshot ---
