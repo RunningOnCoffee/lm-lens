@@ -47,6 +47,10 @@ You just deployed a model on your shiny new GPU. The single-user latency looks g
 
 LM Lens answers that question. It models the **workload mix**, not just the request count.
 
+- **Seeded runs for fair comparison** — Pin a seed on your scenario and the exact same prompts, in the same order, are sent every time. Swap the endpoint, keep the seed — now you're comparing models and hardware, not random prompt variation.
+- **Browse every response** — Don't just trust the numbers. Open the Response Browser to read full conversations turn by turn, see quality flags inline, and judge whether the model actually answered well under load.
+- **Quality under pressure** — Most benchmarks tell you throughput dropped. LM Lens tells you the model started repeating itself at 15 concurrent users and began refusing prompts at 25.
+
 ## Features
 
 <table>
@@ -57,6 +61,7 @@ LM Lens answers that question. It models the **workload mix**, not just the requ
 - 4 built-in user profiles with distinct prompt patterns
 - Multi-turn conversations with variable substitution
 - Realistic think time and read time between turns
+- Seeded runs for reproducible, comparable benchmarks
 - Create custom profiles for your specific workloads
 
 </td>
@@ -102,10 +107,10 @@ LM Lens answers that question. It models the **workload mix**, not just the requ
 </td>
 <td>
 
-**Comparison & Export**
-- A/B benchmark comparison with delta percentages
-- Response browser with chat-style conversation viewer
-- Per-turn ITL sparklines and quality flag pills
+**Response Browser & Comparison**
+- Browse full conversations: user prompts and LLM responses, turn by turn
+- Quality flags and per-turn metrics inline (TTFT, tok/s, ITL sparkline)
+- A/B benchmark comparison with delta percentages and quality diffs
 - CSV and JSON export
 
 </td>
