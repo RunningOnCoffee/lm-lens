@@ -53,8 +53,8 @@ Run it against llama.cpp, vLLM, Ollama, LM Studio, OpenAI, or any OpenAI-compati
 ### 1. Clone and configure
 
 ```bash
-git clone https://github.com/<your-username>/LMLens.git
-cd LMLens
+git clone https://github.com/RunningOnCoffee/lm-lens.git
+cd lm-lens
 cp .env.example .env
 ```
 
