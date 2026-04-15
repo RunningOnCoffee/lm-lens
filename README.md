@@ -1,5 +1,7 @@
 <div align="center">
 
+<img src="docs/images/logo.png" alt="LM Lens" width="140">
+
 # LM Lens
 
 **Realistic multi-user LLM benchmarking for any OpenAI-compatible endpoint**
