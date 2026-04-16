@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { dashboardApi, benchmarksApi } from '../api/client';
+import { dashboardApi, benchmarksApi, endpointsApi, scenariosApi } from '../api/client';
 import MetricCard from '../components/MetricCard';
 import Spinner from '../components/Spinner';
 import StatusBadge from '../components/StatusBadge';
@@ -100,6 +100,7 @@ export default function Dashboard() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [activeBenchmarks, setActiveBenchmarks] = useState([]);
+  const [setup, setSetup] = useState({ endpoints: null, scenarios: null });
 
   const fetchDashboard = () => {
     dashboardApi.get()
@@ -132,6 +133,12 @@ export default function Dashboard() {
 
     fetchDashboard();
     fetchActive();
+
+    // Fetch setup counts for onboarding
+    Promise.all([
+      endpointsApi.list().then((r) => r.meta?.total ?? r.data?.length ?? 0).catch(() => 0),
+      scenariosApi.list().then((r) => r.meta?.total ?? r.data?.length ?? 0).catch(() => 0),
+    ]).then(([ep, sc]) => setSetup({ endpoints: ep, scenarios: sc }));
   }, []);
 
   // Poll active benchmarks every 3s, refresh dashboard when they finish
@@ -182,17 +189,46 @@ export default function Dashboard() {
       )}
 
       {!loading && isEmpty && (
-        <div className="bg-surface-800 border border-surface-600 rounded-xl p-8 text-center">
-          <p className="text-gray-400 font-heading text-lg mb-2">Ready to benchmark</p>
-          <p className="text-gray-600 text-sm mb-4">
-            Create a scenario and endpoint, then run your first benchmark to populate this dashboard.
+        <div className="bg-surface-800 border border-surface-600 rounded-xl p-8">
+          <p className="text-gray-300 font-heading text-lg mb-1">Welcome to LM Lens</p>
+          <p className="text-gray-600 text-sm mb-6">
+            Set up your first benchmark in three steps. Your profiles are already loaded and ready to go.
           </p>
-          <button
-            onClick={() => navigate('/benchmarks')}
-            className="px-5 py-2 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors"
-          >
-            Go to Benchmarks
-          </button>
+
+          <div className="space-y-3">
+            <OnboardingStep
+              step={1}
+              title="Configure an AI Endpoint"
+              description="A mock server is ready to go. Add your own LLM server (llama.cpp, vLLM, Ollama, OpenAI) or use the mock to get started."
+              done={setup.endpoints > 1}
+              action={() => navigate('/endpoints')}
+              actionLabel="Add Endpoint"
+            />
+            <OnboardingStep
+              step={2}
+              title="Create a Scenario"
+              description="Pick user profiles, set concurrency, choose a test mode (stress, ramp, or breaking point)."
+              done={setup.scenarios > 0}
+              disabled={!setup.endpoints}
+              action={() => navigate('/scenarios/new')}
+              actionLabel="Create Scenario"
+            />
+            <OnboardingStep
+              step={3}
+              title="Run a Benchmark"
+              description="Select your scenario and endpoint, hit start, and watch live metrics on the dashboard."
+              done={false}
+              disabled={!setup.endpoints || !setup.scenarios}
+              action={() => navigate('/benchmarks')}
+              actionLabel="Go to Benchmarks"
+            />
+          </div>
+
+          <div className="mt-6 pt-4 border-t border-surface-600">
+            <p className="text-[11px] text-gray-600">
+              The mock server endpoint is pre-configured and ready to use. To benchmark a real LLM, add a new endpoint under AI Endpoints.
+            </p>
+          </div>
         </div>
       )}
 
@@ -332,6 +368,47 @@ export default function Dashboard() {
             </div>
           )}
         </>
+      )}
+    </div>
+  );
+}
+
+function OnboardingStep({ step, title, description, done, disabled, action, actionLabel }) {
+  return (
+    <div className={`flex items-center gap-4 px-4 py-3 rounded-xl border transition-colors ${
+      done
+        ? 'border-green-400/20 bg-green-400/5'
+        : disabled
+          ? 'border-surface-600 bg-surface-700/30 opacity-50'
+          : 'border-accent/30 bg-accent/5'
+    }`}>
+      <div className={`flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold ${
+        done
+          ? 'bg-green-400/20 text-green-400'
+          : disabled
+            ? 'bg-surface-600 text-gray-600'
+            : 'bg-accent/20 text-accent'
+      }`}>
+        {done ? '\u2713' : step}
+      </div>
+      <div className="flex-1 min-w-0">
+        <p className={`text-sm font-medium ${done ? 'text-green-400/80' : disabled ? 'text-gray-600' : 'text-gray-200'}`}>
+          {title}
+        </p>
+        <p className={`text-xs ${done ? 'text-green-400/40' : 'text-gray-600'}`}>
+          {description}
+        </p>
+      </div>
+      {!done && !disabled && (
+        <button
+          onClick={action}
+          className="flex-shrink-0 px-4 py-1.5 text-xs rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors"
+        >
+          {actionLabel}
+        </button>
+      )}
+      {done && (
+        <span className="flex-shrink-0 text-xs text-green-400/60 font-medium">Done</span>
       )}
     </div>
   );

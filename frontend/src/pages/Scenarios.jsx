@@ -191,8 +191,17 @@ export default function Scenarios() {
         ))}
 
         {scenarios.length === 0 && (
-          <div className="px-4 py-8 text-center text-gray-600 text-sm">
-            No scenarios yet. Create one to define a benchmark workload.
+          <div className="px-4 py-10 text-center">
+            <p className="text-gray-400 font-medium mb-1">No scenarios yet</p>
+            <p className="text-gray-600 text-sm mb-4">
+              A scenario defines the workload: which user profiles, how many concurrent users, and what test mode to run.
+            </p>
+            <button
+              onClick={() => navigate('/scenarios/new')}
+              className="px-4 py-1.5 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors"
+            >
+              Create Scenario
+            </button>
           </div>
         )}
       </div>

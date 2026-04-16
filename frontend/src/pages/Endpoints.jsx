@@ -149,8 +149,17 @@ export default function Endpoints() {
         ))}
 
         {endpoints.length === 0 && (
-          <div className="px-4 py-8 text-center text-gray-600 text-sm">
-            No endpoints yet. Add one to connect to an LLM server.
+          <div className="px-4 py-10 text-center">
+            <p className="text-gray-400 font-medium mb-1">No endpoints yet</p>
+            <p className="text-gray-600 text-sm mb-4">
+              Connect to your LLM server — llama.cpp, vLLM, Ollama, OpenAI, or use the built-in mock at <span className="font-mono text-gray-500">http://lm-lens-mock:8000</span>
+            </p>
+            <button
+              onClick={() => navigate('/endpoints/new')}
+              className="px-4 py-1.5 text-sm rounded-lg bg-accent text-surface-900 font-semibold hover:bg-accent-bright transition-colors"
+            >
+              Add Endpoint
+            </button>
           </div>
         )}
       </div>

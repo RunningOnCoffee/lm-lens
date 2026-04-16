@@ -15,6 +15,7 @@ from app.models import (
     Profile,
     TemplateVariable,
 )
+from app.models.endpoint import Endpoint
 from app.seed_data.code_snippets import CODE_SNIPPETS
 from app.seed_data.profiles import PROFILES
 
@@ -166,10 +167,40 @@ async def seed_code_snippets(session: AsyncSession) -> None:
     await session.flush()
 
 
+SEED_ENDPOINTS = [
+    {
+        "name": "Mock LLM Server",
+        "endpoint_url": "http://lm-lens-mock:8000",
+        "model_name": "mock-gpt",
+        "inference_engine": "LM Lens Mock",
+        "notes": "Built-in mock server for testing. Simulates streaming responses with configurable latency.",
+    },
+]
+
+
+async def seed_endpoints(session: AsyncSession) -> None:
+    """Seed built-in endpoints — only creates if none exist yet."""
+    result = await session.execute(select(Endpoint))
+    if result.scalars().first() is not None:
+        logger.info("Endpoints already exist, skipping seed")
+        return
+
+    for ep_data in SEED_ENDPOINTS:
+        endpoint = Endpoint(
+            id=uuid.uuid4(),
+            **ep_data,
+        )
+        session.add(endpoint)
+        logger.info(f"Created seed endpoint: {ep_data['name']}")
+
+    await session.flush()
+
+
 async def run_seed(session: AsyncSession) -> None:
     """Run all seed operations."""
     logger.info("Starting seed...")
     await seed_profiles(session)
     await seed_code_snippets(session)
+    await seed_endpoints(session)
     await session.commit()
     logger.info("Seed complete.")

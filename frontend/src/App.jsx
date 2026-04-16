@@ -10,6 +10,7 @@ import ProfileEditor from './pages/ProfileEditor';
 import ProfileView from './pages/ProfileView';
 import Scenarios from './pages/Scenarios';
 import ScenarioEditor from './pages/ScenarioEditor';
+import NotFound from './pages/NotFound';
 
 function Sidebar() {
   const linkClass = ({ isActive }) =>
@@ -21,11 +22,14 @@ function Sidebar() {
 
   return (
     <aside className="w-56 bg-surface-800 border-r border-surface-600 flex flex-col h-screen sticky top-0">
-      <div className="px-4 py-5 border-b border-surface-600">
-        <h1 className="font-heading font-bold text-lg text-accent tracking-wide">
-          LM Lens
-        </h1>
-        <p className="text-xs text-gray-500 mt-0.5">LLM Benchmark Tool</p>
+      <div className="px-4 py-5 border-b border-surface-600 flex items-center gap-3">
+        <img src="/logo.png" alt="LM Lens" className="w-12 h-12" />
+        <div>
+          <h1 className="font-heading font-bold text-lg text-accent tracking-wide leading-tight">
+            LM Lens
+          </h1>
+          <p className="text-xs text-gray-500 mt-0.5">LLM Benchmark Tool</p>
+        </div>
       </div>
       <nav className="flex-1 p-3 space-y-1">
         <NavLink to="/" className={linkClass} end>Dashboard</NavLink>
@@ -62,6 +66,7 @@ export default function App() {
             <Route path="/profiles/new" element={<ProfileEditor />} />
             <Route path="/profiles/:id/edit" element={<ProfileEditor />} />
             <Route path="/profiles/:id" element={<ProfileView />} />
+            <Route path="*" element={<NotFound />} />
           </Routes>
         </main>
       </div>

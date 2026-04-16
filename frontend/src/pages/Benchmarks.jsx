@@ -405,8 +405,11 @@ export default function Benchmarks() {
         })}
 
         {benchmarks.length === 0 && (
-          <div className="px-4 py-8 text-center text-gray-600 text-sm">
-            No benchmarks yet. Select a scenario and endpoint, then click Run Benchmark.
+          <div className="px-4 py-10 text-center">
+            <p className="text-gray-400 font-medium mb-1">No benchmarks yet</p>
+            <p className="text-gray-600 text-sm">
+              Pick a scenario and endpoint above, then hit Run Benchmark to start your first test.
+            </p>
           </div>
         )}
       </div>
